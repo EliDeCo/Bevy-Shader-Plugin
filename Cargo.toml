@@ -1,6 +1,18 @@
-[workspace]
-members = ["bevy_fragment_shader", "shader_example", "procedural-terrain-raymarching"]
-resolver = "2"
+[package]
+name = "bevy_fragment_shader"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { version = "0.18.0", default-features = false, features = [
+    "bevy_asset",
+    "bevy_core_pipeline",
+    "bevy_render",
+] }
+encase = "0.12"
+
+[dev-dependencies]
+bevy = { version = "0.18.0", default-features = false, features = ["3d", "dev"] }
 
 [profile.dev]
 opt-level = 1

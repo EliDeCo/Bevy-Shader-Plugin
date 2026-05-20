@@ -6,8 +6,8 @@ use bevy::{
     prelude::*,
     render::render_resource::{
         BindGroupLayoutDescriptor, BindGroupLayoutEntries, BlendState, CachedRenderPipelineId,
-        ColorTargetState, ColorWrites, FragmentState, PipelineCache, RenderPipelineDescriptor,
-        ShaderStages, ShaderType, TextureFormat,
+        ColorTargetState, ColorWrites, FragmentState, MultisampleState, PipelineCache,
+        RenderPipelineDescriptor, ShaderStages, ShaderType, TextureFormat,
         binding_types::uniform_buffer,
     },
 };
@@ -72,6 +72,11 @@ pub(crate) fn init_pipeline<U: ShaderType + encase::internal::WriteInto + Send +
             })],
             ..default()
         }),
+        multisample: MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
         ..default()
     });
 

@@ -1,8 +1,0 @@
-[package]
-name = "shader_example"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-bevy = { version = "0.18.0", default-features = false, features = ["3d", "dev"] }
-bevy_fragment_shader = { path = "../bevy_fragment_shader" }

@@ -35,6 +35,7 @@ use bevy::{
         Extract, ExtractSchedule, Render, RenderApp, RenderStartup, RenderSystems,
         render_graph::{RenderGraphExt, RenderLabel, ViewNodeRunner},
         render_resource::{BindGroup, BindGroupLayoutDescriptor, ShaderType},
+        view::Msaa,
     },
 };
 use encase::internal::WriteInto;
@@ -90,6 +91,9 @@ impl RenderLabel for FullscreenShaderNode {
 ///
 /// `U` is the uniform type, which must be inserted as a `Resource` in the
 /// main world. The library extracts it to the render world automatically.
+///
+/// This plugin is not compatible with MSAA. It automatically inserts
+/// `Msaa::Off` on every camera so no manual configuration is needed.
 pub struct FullscreenFragmentPlugin<U> {
     /// Path to the fragment shader asset (e.g. `"shaders/effect.wgsl"`).
     pub shader_path: &'static str,
@@ -107,6 +111,17 @@ where
     U: ShaderType + WriteInto + Default + Resource + Clone + Send + Sync + 'static,
 {
     fn build(&self, app: &mut App) {
+        // Automatically disable MSAA on every camera — this pipeline is
+        // incompatible with multi-sample render targets.
+        app.add_systems(
+            Update,
+            |mut commands: Commands, cameras: Query<Entity, (With<Camera>, Without<Msaa>)>| {
+                for entity in &cameras {
+                    commands.entity(entity).insert(Msaa::Off);
+                }
+            },
+        );
+
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
