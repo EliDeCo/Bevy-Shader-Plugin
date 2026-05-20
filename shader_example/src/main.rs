@@ -26,7 +26,7 @@ fn main() {
 }
 
 fn setup(mut commands: Commands) {
-    commands.spawn(Camera3d::default());
+    commands.spawn((Camera3d::default(), Msaa::Off));
 }
 
 fn update_uniform(

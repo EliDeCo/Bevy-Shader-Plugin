@@ -1,2 +1,4 @@
 target/
+bevy_fragment_shader/target/
+shader_example/target/
 procedural-terrain-raymarching/
