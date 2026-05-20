@@ -1,7 +1,5 @@
 // Fullscreen animated color effect demonstrating the bevy_fragment_shader library.
-//
-// Group 0, binding 0 is always the uniform managed by the library.
-// Additional bind groups (if any) would start at group 1.
+
 
 struct ExampleUniform {
     resolution: vec2<f32>,

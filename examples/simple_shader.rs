@@ -1,11 +1,11 @@
 use bevy::{prelude::*, render::render_resource::ShaderType, window::PrimaryWindow};
 use bevy_fragment_shader::FullscreenFragmentPlugin;
 
-const SHADER_PATH: &str = "shaders/example.wgsl";
+const SHADER_PATH: &str = "shaders/simple_shader.wgsl";
 
 /// Uniform data sent to the fragment shader each frame.
 ///
-/// Layout must match the WGSL struct in `example.wgsl`.
+/// Layout must match the WGSL struct the linked .wgsl file.
 /// Field order: resolution (vec2) then time (f32) then padding keeps the
 /// struct at 16 bytes — the minimum for a WebGPU uniform buffer.
 #[derive(Resource, ShaderType, Clone, Default)]
