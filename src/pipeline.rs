@@ -5,9 +5,9 @@ use bevy::{
     core_pipeline::FullscreenShader,
     prelude::*,
     render::render_resource::{
-        BindGroupLayoutDescriptor, BindGroupLayoutEntries, BlendState, CachedRenderPipelineId,
-        ColorTargetState, ColorWrites, FragmentState, MultisampleState, PipelineCache,
-        RenderPipelineDescriptor, ShaderStages, ShaderType, TextureFormat,
+        BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntries, BlendState,
+        CachedRenderPipelineId, ColorTargetState, ColorWrites, FragmentState, MultisampleState,
+        PipelineCache, RenderPipelineDescriptor, ShaderStages, ShaderType, TextureFormat,
         binding_types::uniform_buffer,
     },
 };
@@ -22,12 +22,15 @@ pub struct FullscreenPipelineConfig {
 }
 
 /// Render-world resource created by `init_pipeline`. Holds the cached pipeline
-/// ID and the per-frame bind group layout descriptor so `prepare_bind_group`
-/// can retrieve the layout from the cache each frame.
+/// ID, the per-frame bind group layout descriptor, and compiled layouts for any
+/// extra bind groups (groups 1..n) registered via `FragmentExtraLayouts`.
 #[derive(Resource)]
 pub struct FullscreenPipeline<U: 'static> {
     pub pipeline_id: CachedRenderPipelineId,
     pub per_frame_layout: BindGroupLayoutDescriptor,
+    /// Compiled `BindGroupLayout` for each extra group in the order they were
+    /// pushed into `FragmentExtraLayouts`. Index 0 corresponds to GPU group 1.
+    pub extra_layouts: Vec<BindGroupLayout>,
     _phantom: PhantomData<U>,
 }
 
@@ -80,9 +83,16 @@ pub(crate) fn init_pipeline<U: ShaderType + encase::internal::WriteInto + Send +
         ..default()
     });
 
+    let extra_compiled: Vec<BindGroupLayout> = extra_layouts
+        .0
+        .iter()
+        .map(|desc| pipeline_cache.get_bind_group_layout(desc))
+        .collect();
+
     commands.insert_resource(FullscreenPipeline::<U> {
         pipeline_id,
         per_frame_layout,
+        extra_layouts: extra_compiled,
         _phantom: PhantomData,
     });
 }

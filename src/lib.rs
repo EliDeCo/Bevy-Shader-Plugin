@@ -16,13 +16,16 @@
 //!
 //! # Extra bind groups (groups 1..n)
 //!
-//! To pass storage buffers, textures, or other data to the shader beyond the
-//! uniform, create your bind group layout descriptors in a `RenderStartup`
-//! system ordered **before** `FragmentSystems::InitPipeline`, push them into
-//! `FragmentExtraLayouts`, and update `FragmentExtraBindGroups` each frame in
-//! a `RenderSystems::PrepareBindGroups` system.
+//! Use [`FragmentAppExt::register_fragment_extra_bind_group`] to register both
+//! the layout-setup and per-frame bind-group systems in a single call. The
+//! layout system runs in `RenderStartup` before [`FragmentSystems::InitPipeline`]
+//! automatically; the bind-group system runs in `RenderSystems::PrepareBindGroups`.
+//!
+//! Inside those systems, use the helper methods on [`FragmentExtraLayouts`] and
+//! [`FragmentExtraBindGroups`] to avoid raw wgpu boilerplate.
 
 mod bind_group;
+mod extra_bind_group;
 mod node;
 mod pipeline;
 
@@ -30,18 +33,37 @@ use std::marker::PhantomData;
 
 use bevy::{
     core_pipeline::core_3d::graph::{Core3d, Node3d},
+    ecs::system::ScheduleSystem,
     prelude::*,
     render::{
         Extract, ExtractSchedule, Render, RenderApp, RenderStartup, RenderSystems,
         render_graph::{RenderGraphExt, RenderLabel, ViewNodeRunner},
-        render_resource::{BindGroup, BindGroupLayoutDescriptor, ShaderType},
+        render_resource::{
+            BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
+            ShaderStages, ShaderType,
+            binding_types::{sampler, storage_buffer_read_only_sized, storage_buffer_sized, texture_2d},
+        },
+        renderer::RenderDevice,
+        texture::GpuImage,
     },
 };
 use encase::internal::WriteInto;
 
 pub use bind_group::FullscreenBindGroup;
+pub use extra_bind_group::FragmentBindGroupBuilder;
 pub use node::FullscreenNode;
 pub use pipeline::{FullscreenPipeline, FullscreenPipelineConfig};
+
+// ---------------------------------------------------------------------------
+// Re-exports for the fragment_layout! macro
+// ---------------------------------------------------------------------------
+
+#[doc(hidden)]
+pub mod __private {
+    pub use bevy::render::render_resource::{
+        BindGroupLayoutDescriptor, BindGroupLayoutEntries, ShaderStages,
+    };
+}
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -58,19 +80,109 @@ pub enum FragmentSystems {
 
 /// Bind group layout descriptors for the extra bind groups (groups 1..n).
 ///
-/// Insert your `BindGroupLayoutDescriptor` values here in a `RenderStartup`
-/// system **before** `FragmentSystems::InitPipeline`. The library includes
-/// these descriptors in the pipeline layout when queueing the render pipeline.
+/// Prefer the helper methods ([`texture_2d_and_sampler`](Self::texture_2d_and_sampler),
+/// [`storage_buffer_read_only`](Self::storage_buffer_read_only), etc.) over
+/// pushing raw descriptors via `.0.push(...)`.
+///
+/// Populate this resource in the layout system passed to
+/// [`FragmentAppExt::register_fragment_extra_bind_group`].
 #[derive(Resource, Default)]
 pub struct FragmentExtraLayouts(pub Vec<BindGroupLayoutDescriptor>);
 
+impl FragmentExtraLayouts {
+    /// Push an arbitrary [`BindGroupLayoutDescriptor`].
+    pub fn push(&mut self, desc: BindGroupLayoutDescriptor) -> &mut Self {
+        self.0.push(desc);
+        self
+    }
+
+    /// Add a group with a filterable 2D float texture at binding 0 and a
+    /// filtering sampler at binding 1, both visible to fragment shaders.
+    pub fn texture_2d_and_sampler(&mut self, label: &'static str) -> &mut Self {
+        self.0.push(BindGroupLayoutDescriptor::new(
+            label,
+            &BindGroupLayoutEntries::sequential(
+                ShaderStages::FRAGMENT,
+                (
+                    texture_2d(bevy::render::render_resource::TextureSampleType::Float {
+                        filterable: true,
+                    }),
+                    sampler(bevy::render::render_resource::SamplerBindingType::Filtering),
+                ),
+            ),
+        ));
+        self
+    }
+
+    /// Add a group with a single read-only storage buffer at binding 0.
+    pub fn storage_buffer_read_only(&mut self, label: &'static str) -> &mut Self {
+        self.0.push(BindGroupLayoutDescriptor::new(
+            label,
+            &BindGroupLayoutEntries::single(
+                ShaderStages::FRAGMENT,
+                storage_buffer_read_only_sized(false, None),
+            ),
+        ));
+        self
+    }
+
+    /// Add a group with a single read-write storage buffer at binding 0.
+    pub fn storage_buffer_read_write(&mut self, label: &'static str) -> &mut Self {
+        self.0.push(BindGroupLayoutDescriptor::new(
+            label,
+            &BindGroupLayoutEntries::single(
+                ShaderStages::FRAGMENT,
+                storage_buffer_sized(false, None),
+            ),
+        ));
+        self
+    }
+}
+
 /// Per-frame bind groups for groups 1..n.
 ///
-/// Populate this resource each frame in a `RenderSystems::PrepareBindGroups`
-/// system. The library's render node sets these as bind groups 1..n before
-/// issuing the draw call.
+/// Call [`clear`](Self::clear) at the start of your `PrepareBindGroups` system,
+/// then use [`push`](Self::push), [`push_gpu_image`](Self::push_gpu_image), or
+/// [`FragmentBindGroupBuilder`] to populate each group in order.
 #[derive(Resource, Default)]
 pub struct FragmentExtraBindGroups(pub Vec<BindGroup>);
+
+impl FragmentExtraBindGroups {
+    /// Push a pre-built bind group. Corresponds to GPU group `self.0.len() + 1`.
+    pub fn push(&mut self, bind_group: BindGroup) -> &mut Self {
+        self.0.push(bind_group);
+        self
+    }
+
+    /// Remove all bind groups. Call this at the start of your
+    /// `PrepareBindGroups` system before re-populating.
+    pub fn clear(&mut self) -> &mut Self {
+        self.0.clear();
+        self
+    }
+
+    /// Create and push a bind group for a [`GpuImage`] (texture view + sampler)
+    /// using the compiled layout at `group_index` in [`FullscreenPipeline::extra_layouts`].
+    ///
+    /// `group_index` is 0-based into the extra layouts (so index 0 → GPU group 1).
+    pub fn push_gpu_image<U: 'static>(
+        &mut self,
+        label: &str,
+        pipeline: &FullscreenPipeline<U>,
+        render_device: &RenderDevice,
+        group_index: usize,
+        gpu_image: &GpuImage,
+    ) -> &mut Self {
+        let layout = &pipeline.extra_layouts[group_index];
+        let bind_group = render_device.create_bind_group(
+            label,
+            layout,
+            &BindGroupEntries::sequential((&gpu_image.texture_view, &gpu_image.sampler)),
+        );
+        self.0.push(bind_group);
+        self
+    }
+}
 
 /// The render graph node label. Only one `FullscreenFragmentPlugin` instance
 /// is supported per app (adding two would cause a label conflict here).
@@ -80,6 +192,82 @@ impl RenderLabel for FullscreenShaderNode {
     fn dyn_clone(&self) -> Box<dyn RenderLabel> {
         Box::new(*self)
     }
+}
+
+// ---------------------------------------------------------------------------
+// App extension trait
+// ---------------------------------------------------------------------------
+
+/// Extension methods on [`App`] for registering extra bind group systems.
+pub trait FragmentAppExt {
+    /// Register a layout-setup system and a per-frame bind-group system for
+    /// extra bind groups (groups 1..n).
+    ///
+    /// - `layout_system` runs in `RenderStartup` **before**
+    ///   [`FragmentSystems::InitPipeline`] — ordering is handled automatically.
+    /// - `prepare_system` runs in `RenderSystems::PrepareBindGroups`.
+    ///
+    /// Both systems run in the render world. If you need main-world resources
+    /// available there, register an extraction system separately via
+    /// `app.sub_app_mut(RenderApp).add_systems(ExtractSchedule, ...)`.
+    fn register_fragment_extra_bind_group<LM, PM>(
+        &mut self,
+        layout_system: impl IntoScheduleConfigs<ScheduleSystem, LM>,
+        prepare_system: impl IntoScheduleConfigs<ScheduleSystem, PM>,
+    ) -> &mut Self;
+}
+
+impl FragmentAppExt for App {
+    fn register_fragment_extra_bind_group<LM, PM>(
+        &mut self,
+        layout_system: impl IntoScheduleConfigs<ScheduleSystem, LM>,
+        prepare_system: impl IntoScheduleConfigs<ScheduleSystem, PM>,
+    ) -> &mut Self {
+        let render_app = self.sub_app_mut(RenderApp);
+        render_app
+            .add_systems(
+                RenderStartup,
+                layout_system.before(FragmentSystems::InitPipeline),
+            )
+            .add_systems(
+                Render,
+                prepare_system.in_set(RenderSystems::PrepareBindGroups),
+            );
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// fragment_layout! macro
+// ---------------------------------------------------------------------------
+
+/// Build a [`BindGroupLayoutDescriptor`] with sequential fragment-stage bindings.
+///
+/// Shorthand for the common `BindGroupLayoutDescriptor::new + BindGroupLayoutEntries::sequential`
+/// pattern when all bindings are visible only to the fragment shader.
+///
+/// # Example
+/// ```rust,ignore
+/// use bevy::render::render_resource::binding_types::{texture_2d, sampler};
+/// use bevy::render::render_resource::{TextureSampleType, SamplerBindingType};
+///
+/// extra_layouts.push(fragment_layout!(
+///     "my_layout",
+///     texture_2d(TextureSampleType::Float { filterable: true }),
+///     sampler(SamplerBindingType::Filtering),
+/// ));
+/// ```
+#[macro_export]
+macro_rules! fragment_layout {
+    ($label:expr, $($entry:expr),+ $(,)?) => {
+        $crate::__private::BindGroupLayoutDescriptor::new(
+            $label,
+            &$crate::__private::BindGroupLayoutEntries::sequential(
+                $crate::__private::ShaderStages::FRAGMENT,
+                ($($entry,)+),
+            ),
+        )
+    };
 }
 
 // ---------------------------------------------------------------------------
