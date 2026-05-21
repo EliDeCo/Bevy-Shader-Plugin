@@ -16,7 +16,7 @@
 //!
 //! # Extra bind groups (groups 1..n)
 //!
-//! Use [`FragmentAppExt::register_fragment_extra_bind_group`] to register both
+//! Use [`FragmentAppExt::register_extra_bind_group`] to register both
 //! the layout-setup and per-frame bind-group systems in a single call. The
 //! layout system runs in `RenderStartup` before [`FragmentSystems::InitPipeline`]
 //! automatically; the bind-group system runs in `RenderSystems::PrepareBindGroups`.
@@ -85,7 +85,7 @@ pub enum FragmentSystems {
 /// pushing raw descriptors via `.0.push(...)`.
 ///
 /// Populate this resource in the layout system passed to
-/// [`FragmentAppExt::register_fragment_extra_bind_group`].
+/// [`FragmentAppExt::register_extra_bind_group`].
 #[derive(Resource, Default)]
 pub struct FragmentExtraLayouts(pub Vec<BindGroupLayoutDescriptor>);
 
@@ -210,7 +210,7 @@ pub trait FragmentAppExt {
     /// Both systems run in the render world. If you need main-world resources
     /// available there, register an extraction system separately via
     /// `app.sub_app_mut(RenderApp).add_systems(ExtractSchedule, ...)`.
-    fn register_fragment_extra_bind_group<LM, PM>(
+    fn register_extra_bind_group<LM, PM>(
         &mut self,
         layout_system: impl IntoScheduleConfigs<ScheduleSystem, LM>,
         prepare_system: impl IntoScheduleConfigs<ScheduleSystem, PM>,
@@ -218,7 +218,7 @@ pub trait FragmentAppExt {
 }
 
 impl FragmentAppExt for App {
-    fn register_fragment_extra_bind_group<LM, PM>(
+    fn register_extra_bind_group<LM, PM>(
         &mut self,
         layout_system: impl IntoScheduleConfigs<ScheduleSystem, LM>,
         prepare_system: impl IntoScheduleConfigs<ScheduleSystem, PM>,

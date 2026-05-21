@@ -29,7 +29,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugins(FullscreenFragmentPlugin::<ExampleUniform>::new(SHADER_PATH))
         .init_resource::<ExampleUniform>()
-        .register_fragment_extra_bind_group(setup_storage_layout, prepare_storage_bind_group)
+        .register_extra_bind_group(setup_storage_layout, prepare_storage_bind_group)
         .add_systems(Startup, setup)
         .add_systems(Update, update_uniform)
         .run();

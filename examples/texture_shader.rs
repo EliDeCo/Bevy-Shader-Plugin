@@ -33,12 +33,12 @@ fn main() {
     app.add_plugins(DefaultPlugins)
         .add_plugins(FullscreenFragmentPlugin::<ExampleUniform>::new(SHADER_PATH))
         .init_resource::<ExampleUniform>()
-        .register_fragment_extra_bind_group(setup_texture_layout, prepare_texture_bind_group)
+        .register_extra_bind_group(setup_texture_layout, prepare_texture_bind_group)
         .add_systems(Startup, setup)
         .add_systems(Update, update_uniform);
 
     // Extraction for SceneTexture is wired up in the render app separately from
-    // register_fragment_extra_bind_group, which only handles the layout/prepare pair.
+    // register_extra_bind_group, which only handles the layout/prepare pair.
     app.sub_app_mut(RenderApp)
         .add_systems(ExtractSchedule, extract_scene_texture);
 
