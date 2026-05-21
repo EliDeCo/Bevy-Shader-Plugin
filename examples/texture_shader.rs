@@ -3,7 +3,7 @@ use bevy::{
     render::{
         Extract, ExtractSchedule, RenderApp,
         render_asset::RenderAssets,
-        render_resource::{Extent3d, ShaderType, TextureDimension, TextureFormat},
+        render_resource::ShaderType,
         renderer::RenderDevice,
         texture::GpuImage,
     },
@@ -23,7 +23,7 @@ struct ExampleUniform {
     _pad: f32,
 }
 
-/// Main-world handle to the procedurally generated texture.
+/// Main-world handle to the scene texture loaded from disk.
 #[derive(Resource, Clone)]
 struct SceneTexture(Handle<Image>);
 
@@ -45,30 +45,9 @@ fn main() {
     app.run();
 }
 
-fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((Camera3d::default(), Msaa::Off));
-
-    // Build a 64×64 gradient image procedurally so no texture file is needed.
-    let size = 64u32;
-    let mut data = vec![0u8; (size * size * 4) as usize];
-    for y in 0..size {
-        for x in 0..size {
-            let i = ((y * size + x) * 4) as usize;
-            data[i] = ((x * 255) / size) as u8;      // R: horizontal gradient
-            data[i + 1] = ((y * 255) / size) as u8;  // G: vertical gradient
-            data[i + 2] = 128;                         // B: constant mid-blue
-            data[i + 3] = 255;                         // A: opaque
-        }
-    }
-    let image = Image::new(
-        Extent3d { width: size, height: size, depth_or_array_layers: 1 },
-        TextureDimension::D2,
-        data,
-        TextureFormat::Rgba8UnormSrgb,
-        default(),
-    );
-    let handle = images.add(image);
-    commands.insert_resource(SceneTexture(handle));
+    commands.insert_resource(SceneTexture(asset_server.load("textures/bevy_logo_dark.png")));
 }
 
 fn update_uniform(
