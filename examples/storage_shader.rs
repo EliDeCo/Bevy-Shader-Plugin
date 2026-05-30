@@ -10,28 +10,41 @@ struct ExampleUniform {
     _pad: f32,
 }
 
-/// Color data uploaded to the GPU as a read-only storage buffer at @group(1).
+/// Red channel values for each of the 64 vertical bands, updated every frame.
 #[derive(Resource, ShaderType, Clone)]
-struct ColorData {
-    colors: [Vec4; 64],
+struct RedChannel {
+    values: [f32; 64],
 }
 
-impl Default for ColorData {
-    fn default() -> Self {
-        Self { colors: [Vec4::ZERO; 64] }
-    }
+/// Green channel values for each of the 64 vertical bands, updated every frame.
+#[derive(Resource, ShaderType, Clone)]
+struct GreenChannel {
+    values: [f32; 64],
 }
+
+/// Blue channel values for each of the 64 vertical bands, updated every frame.
+#[derive(Resource, ShaderType, Clone)]
+struct BlueChannel {
+    values: [f32; 64],
+}
+
+impl Default for RedChannel   { fn default() -> Self { Self { values: [0.0; 64] } } }
+impl Default for GreenChannel { fn default() -> Self { Self { values: [0.0; 64] } } }
+impl Default for BlueChannel  { fn default() -> Self { Self { values: [0.0; 64] } } }
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(FullscreenFragmentPlugin::<ExampleUniform>::new(SHADER_PATH))
         .init_resource::<ExampleUniform>()
-        .register_storage_buffer::<ColorData>(1)
-        .init_resource::<ColorData>()
+        .register_storage_buffer::<RedChannel>(1)
+        .register_storage_buffer::<GreenChannel>(2)
+        .register_storage_buffer::<BlueChannel>(3)
+        .init_resource::<RedChannel>()
+        .init_resource::<GreenChannel>()
+        .init_resource::<BlueChannel>()
         .add_systems(Startup, setup)
-        .add_systems(Update, update_uniform)
-        .add_systems(Startup, init_colors)
+        .add_systems(Update, (update_uniform, update_channels))
         .run();
 }
 
@@ -52,15 +65,18 @@ fn update_uniform(
     uniform.time = time.elapsed_secs();
 }
 
-fn init_colors(mut color_data: ResMut<ColorData>) {
+fn update_channels(
+    mut red: ResMut<RedChannel>,
+    mut green: ResMut<GreenChannel>,
+    mut blue: ResMut<BlueChannel>,
+    time: Res<Time>,
+) {
+    let t = time.elapsed_secs();
     let tau = std::f32::consts::TAU;
-    for i in 0..64 {
-        let t = i as f32 / 64.0;
-        color_data.colors[i] = Vec4::new(
-            0.5 + 0.5 * (t * tau).sin(),
-            0.5 + 0.5 * (t * tau * 2.0 + 2.094).sin(),
-            0.5 + 0.5 * (t * tau * 3.0 + 4.189).sin(),
-            1.0,
-        );
+    for i in 0..64usize {
+        let phase = i as f32 / 64.0 * tau;
+        red.values[i]   = 0.5 + 0.5 * (t + phase).sin();
+        green.values[i] = 0.5 + 0.5 * (t * 1.3 + phase + 2.094).sin();
+        blue.values[i]  = 0.5 + 0.5 * (t * 0.7 + phase + 4.189).sin();
     }
 }
