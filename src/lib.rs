@@ -16,7 +16,9 @@ use bevy::{
         render_resource::{
             BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
             PipelineCache, ShaderStages, ShaderType, StorageBuffer,
-            binding_types::{sampler, storage_buffer_read_only_sized, storage_buffer_sized, texture_2d},
+            binding_types::{
+                sampler, storage_buffer_read_only_sized, storage_buffer_sized, texture_2d,
+            },
         },
         renderer::{RenderDevice, RenderQueue},
         texture::GpuImage,
@@ -24,11 +26,11 @@ use bevy::{
 };
 use encase::internal::WriteInto;
 
+pub use auto_storage::{AutoStorageBindGroups, AutoStorageLayouts};
 pub use bind_group::FullscreenBindGroup;
 pub use extra_bind_group::FragmentBindGroupBuilder;
 pub use node::FullscreenNode;
 pub use pipeline::{FullscreenPipeline, FullscreenPipelineConfig};
-pub use auto_storage::{AutoStorageBindGroups, AutoStorageLayouts};
 
 // ---------------------------------------------------------------------------
 // Re-exports for the fragment_layout! macro
@@ -258,16 +260,16 @@ impl FragmentAppExt for App {
         // Build the bind group each frame from the render-world S resource.
         render_app.add_systems(
             Render,
-            (move |
-                mut auto_bind_groups: ResMut<AutoStorageBindGroups>,
-                auto_layouts: Res<AutoStorageLayouts>,
-                pipeline_cache: Res<PipelineCache>,
-                render_device: Res<RenderDevice>,
-                render_queue: Res<RenderQueue>,
-                resource: Option<Res<S>>,
-            | {
+            (move |mut auto_bind_groups: ResMut<AutoStorageBindGroups>,
+                   auto_layouts: Res<AutoStorageLayouts>,
+                   pipeline_cache: Res<PipelineCache>,
+                   render_device: Res<RenderDevice>,
+                   render_queue: Res<RenderQueue>,
+                   resource: Option<Res<S>>| {
                 let Some(resource) = resource else { return };
-                let Some(descriptor) = auto_layouts.0.get(&group_index) else { return };
+                let Some(descriptor) = auto_layouts.0.get(&group_index) else {
+                    return;
+                };
                 let layout = pipeline_cache.get_bind_group_layout(descriptor);
                 let mut buf = StorageBuffer::default();
                 buf.set((*resource).clone());
@@ -279,7 +281,8 @@ impl FragmentAppExt for App {
                     &BindGroupEntries::sequential((binding,)),
                 );
                 auto_bind_groups.0.insert(group_index, bind_group);
-            }).in_set(RenderSystems::PrepareBindGroups),
+            })
+            .in_set(RenderSystems::PrepareBindGroups),
         );
 
         self
@@ -337,7 +340,10 @@ pub struct FullscreenFragmentPlugin<U> {
 
 impl<U> FullscreenFragmentPlugin<U> {
     pub fn new(shader_path: &'static str) -> Self {
-        Self { shader_path, _phantom: PhantomData }
+        Self {
+            shader_path,
+            _phantom: PhantomData,
+        }
     }
 }
 
@@ -385,10 +391,7 @@ where
 // ---------------------------------------------------------------------------
 
 /// Copies the `U` resource from the main world into the render world each frame.
-fn extract_uniform<U: Resource + Clone>(
-    mut commands: Commands,
-    uniform: Extract<Option<Res<U>>>,
-) {
+fn extract_uniform<U: Resource + Clone>(mut commands: Commands, uniform: Extract<Option<Res<U>>>) {
     if let Some(u) = uniform.as_deref() {
         commands.insert_resource(u.clone());
     }

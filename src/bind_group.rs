@@ -3,9 +3,7 @@ use std::marker::PhantomData;
 use bevy::{
     prelude::*,
     render::{
-        render_resource::{
-            BindGroup, BindGroupEntries, PipelineCache, ShaderType, UniformBuffer,
-        },
+        render_resource::{BindGroup, BindGroupEntries, PipelineCache, ShaderType, UniformBuffer},
         renderer::{RenderDevice, RenderQueue},
     },
 };
@@ -46,7 +44,9 @@ pub(crate) fn prepare_bind_group<
     u_buffer.set((*uniform).clone());
     u_buffer.write_buffer(&render_device, &render_queue);
 
-    let Some(binding) = u_buffer.binding() else { return };
+    let Some(binding) = u_buffer.binding() else {
+        return;
+    };
 
     let bind_group = render_device.create_bind_group(
         "fullscreen_uniform_bind_group",

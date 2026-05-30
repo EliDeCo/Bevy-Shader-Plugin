@@ -28,9 +28,21 @@ struct BlueChannel {
     values: [f32; 64],
 }
 
-impl Default for RedChannel   { fn default() -> Self { Self { values: [0.0; 64] } } }
-impl Default for GreenChannel { fn default() -> Self { Self { values: [0.0; 64] } } }
-impl Default for BlueChannel  { fn default() -> Self { Self { values: [0.0; 64] } } }
+impl Default for RedChannel {
+    fn default() -> Self {
+        Self { values: [0.0; 64] }
+    }
+}
+impl Default for GreenChannel {
+    fn default() -> Self {
+        Self { values: [0.0; 64] }
+    }
+}
+impl Default for BlueChannel {
+    fn default() -> Self {
+        Self { values: [0.0; 64] }
+    }
+}
 
 fn main() {
     App::new()
@@ -75,8 +87,8 @@ fn update_channels(
     let tau = std::f32::consts::TAU;
     for i in 0..64usize {
         let phase = i as f32 / 64.0 * tau;
-        red.values[i]   = 0.5 + 0.5 * (t + phase).sin();
+        red.values[i] = 0.5 + 0.5 * (t + phase).sin();
         green.values[i] = 0.5 + 0.5 * (t * 1.3 + phase + 2.094).sin();
-        blue.values[i]  = 0.5 + 0.5 * (t * 0.7 + phase + 4.189).sin();
+        blue.values[i] = 0.5 + 0.5 * (t * 0.7 + phase + 4.189).sin();
     }
 }

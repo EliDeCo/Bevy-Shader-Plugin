@@ -1,5 +1,7 @@
 use bevy::render::{
-    render_resource::{BindGroup, BindGroupEntry, BindGroupLayout, BindingResource, Buffer, Sampler, TextureView},
+    render_resource::{
+        BindGroup, BindGroupEntry, BindGroupLayout, BindingResource, Buffer, Sampler, TextureView,
+    },
     renderer::RenderDevice,
 };
 

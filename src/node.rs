@@ -11,7 +11,10 @@ use bevy::{
     },
 };
 
-use crate::{FragmentExtraBindGroups, auto_storage::AutoStorageBindGroups, bind_group::FullscreenBindGroup, pipeline::FullscreenPipeline};
+use crate::{
+    FragmentExtraBindGroups, auto_storage::AutoStorageBindGroups, bind_group::FullscreenBindGroup,
+    pipeline::FullscreenPipeline,
+};
 
 /// The render graph node that executes the fullscreen fragment shader.
 ///
@@ -25,13 +28,22 @@ pub struct FullscreenNode<U: 'static> {
 
 impl<U> Default for FullscreenNode<U> {
     fn default() -> Self {
-        Self { _phantom: PhantomData }
+        Self {
+            _phantom: PhantomData,
+        }
     }
 }
 
 impl<U> ViewNode for FullscreenNode<U>
 where
-    U: ShaderType + encase::internal::WriteInto + Default + Resource + Clone + Send + Sync + 'static,
+    U: ShaderType
+        + encase::internal::WriteInto
+        + Default
+        + Resource
+        + Clone
+        + Send
+        + Sync
+        + 'static,
 {
     type ViewQuery = &'static ViewTarget;
 

@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 use bevy::{
     prelude::*,
-    render::{Extract, render_resource::{BindGroup, BindGroupLayoutDescriptor}},
+    render::{
+        Extract,
+        render_resource::{BindGroup, BindGroupLayoutDescriptor},
+    },
 };
 
 /// Layout descriptors for auto-managed storage buffers, keyed by WGSL group index.

@@ -1,11 +1,8 @@
 use bevy::{
     prelude::*,
     render::{
-        Extract, ExtractSchedule, RenderApp,
-        render_asset::RenderAssets,
-        render_resource::ShaderType,
-        renderer::RenderDevice,
-        texture::GpuImage,
+        Extract, ExtractSchedule, RenderApp, render_asset::RenderAssets,
+        render_resource::ShaderType, renderer::RenderDevice, texture::GpuImage,
     },
     window::PrimaryWindow,
 };
@@ -47,7 +44,9 @@ fn main() {
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((Camera3d::default(), Msaa::Off));
-    commands.insert_resource(SceneTexture(asset_server.load("textures/bevy_logo_dark.png")));
+    commands.insert_resource(SceneTexture(
+        asset_server.load("textures/bevy_logo_dark.png"),
+    ));
 }
 
 fn update_uniform(
@@ -65,10 +64,7 @@ fn update_uniform(
 
 // --- Render world systems ---
 
-fn extract_scene_texture(
-    mut commands: Commands,
-    texture: Extract<Option<Res<SceneTexture>>>,
-) {
+fn extract_scene_texture(mut commands: Commands, texture: Extract<Option<Res<SceneTexture>>>) {
     if let Some(t) = texture.as_deref() {
         commands.insert_resource(SceneTexture(t.0.clone()));
     }
@@ -85,10 +81,18 @@ fn prepare_texture_bind_group(
     gpu_images: Res<RenderAssets<GpuImage>>,
     texture: Option<Res<SceneTexture>>,
 ) {
-    let (Some(pipeline), Some(texture)) = (pipeline, texture) else { return };
-    let Some(gpu_image) = gpu_images.get(&texture.0) else { return };
+    let (Some(pipeline), Some(texture)) = (pipeline, texture) else {
+        return;
+    };
+    let Some(gpu_image) = gpu_images.get(&texture.0) else {
+        return;
+    };
 
-    extra_bind_groups
-        .clear()
-        .push_gpu_image("scene_texture_bg", &pipeline, &render_device, 0, gpu_image);
+    extra_bind_groups.clear().push_gpu_image(
+        "scene_texture_bg",
+        &pipeline,
+        &render_device,
+        0,
+        gpu_image,
+    );
 }

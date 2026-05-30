@@ -50,16 +50,17 @@ pub(crate) fn init_pipeline<U: ShaderType + encase::internal::WriteInto + Send +
 ) {
     let per_frame_layout = BindGroupLayoutDescriptor::new(
         "fullscreen_per_frame_layout",
-        &BindGroupLayoutEntries::sequential(
-            ShaderStages::FRAGMENT,
-            (uniform_buffer::<U>(false),),
-        ),
+        &BindGroupLayoutEntries::sequential(ShaderStages::FRAGMENT, (uniform_buffer::<U>(false),)),
     );
 
     // Group 0 is the per-frame uniform. Auto-storage buffers occupy the next
     // groups in ascending key order, followed by any manual extra layouts.
     debug_assert!(
-        auto_storage_layouts.0.keys().enumerate().all(|(i, &k)| k == i as u32 + 1),
+        auto_storage_layouts
+            .0
+            .keys()
+            .enumerate()
+            .all(|(i, &k)| k == i as u32 + 1),
         "register_storage_buffer group indices must be contiguous starting at 1"
     );
     let mut all_layouts = vec![per_frame_layout.clone()];
