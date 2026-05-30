@@ -47,7 +47,8 @@ impl Default for BlueChannel {
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(FullscreenFragmentPlugin::<ExampleUniform>::new(SHADER_PATH))
+        .add_plugins(FullscreenFragmentPlugin::new(SHADER_PATH))
+        .register_uniform_buffer::<ExampleUniform>(0, 0)
         .init_resource::<ExampleUniform>()
         .register_storage_buffer::<RedChannel>(1, 0)
         .register_storage_buffer::<GreenChannel>(1, 1)

@@ -1,14 +1,11 @@
 use bevy::render::{
-    render_resource::{
-        BindGroup, BindGroupEntry, BindGroupLayout, BindingResource, Buffer, Sampler, TextureView,
-    },
+    render_resource::{BindGroup, BindGroupEntry, BindGroupLayout, BindingResource, Buffer},
     renderer::RenderDevice,
 };
 
 /// Fluent builder for creating a single extra bind group.
 ///
 /// Bindings are assigned sequentially starting at 0 for each call to
-/// [`texture_view`](Self::texture_view), [`sampler`](Self::sampler), or
 /// [`buffer`](Self::buffer). Use [`at`](Self::at) to set an explicit index.
 pub struct FragmentBindGroupBuilder<'a> {
     label: Option<&'a str>,
@@ -29,24 +26,6 @@ impl<'a> FragmentBindGroupBuilder<'a> {
 
     pub fn label(mut self, label: &'a str) -> Self {
         self.label = Some(label);
-        self
-    }
-
-    pub fn texture_view(mut self, view: &'a TextureView) -> Self {
-        let binding = self.entries.len() as u32;
-        self.entries.push(BindGroupEntry {
-            binding,
-            resource: BindingResource::TextureView(view),
-        });
-        self
-    }
-
-    pub fn sampler(mut self, sampler: &'a Sampler) -> Self {
-        let binding = self.entries.len() as u32;
-        self.entries.push(BindGroupEntry {
-            binding,
-            resource: BindingResource::Sampler(sampler),
-        });
         self
     }
 
