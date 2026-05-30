@@ -1,29 +1,4 @@
-//! A reusable Bevy library for fullscreen fragment shader effects.
-//!
-//! # Quickstart
-//!
-//! 1. Define your uniform type:
-//!    ```rust,ignore
-//!    #[derive(Resource, ShaderType, Clone, Default)]
-//!    struct MyUniform { time: f32, resolution: Vec2, _pad: f32 }
-//!    ```
-//! 2. Add the plugin and insert the uniform resource:
-//!    ```rust,ignore
-//!    app.add_plugins(FullscreenFragmentPlugin::<MyUniform>::new("shaders/effect.wgsl"))
-//!       .init_resource::<MyUniform>();
-//!    ```
-//! 3. Spawn a `Camera3d` with Msaa::Off and update `MyUniform` each frame.
-//!
-//! # Extra bind groups (groups 1..n)
-//!
-//! Use [`FragmentAppExt::register_extra_bind_group`] to register both
-//! the layout-setup and per-frame bind-group systems in a single call. The
-//! layout system runs in `RenderStartup` before [`FragmentSystems::InitPipeline`]
-//! automatically; the bind-group system runs in `RenderSystems::PrepareBindGroups`.
-//!
-//! Inside those systems, use the helper methods on [`FragmentExtraLayouts`] and
-//! [`FragmentExtraBindGroups`] to avoid raw wgpu boilerplate.
-
+mod auto_storage;
 mod bind_group;
 mod extra_bind_group;
 mod node;
@@ -40,10 +15,10 @@ use bevy::{
         render_graph::{RenderGraphExt, RenderLabel, ViewNodeRunner},
         render_resource::{
             BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
-            ShaderStages, ShaderType,
+            PipelineCache, ShaderStages, ShaderType, StorageBuffer,
             binding_types::{sampler, storage_buffer_read_only_sized, storage_buffer_sized, texture_2d},
         },
-        renderer::RenderDevice,
+        renderer::{RenderDevice, RenderQueue},
         texture::GpuImage,
     },
 };
@@ -53,6 +28,7 @@ pub use bind_group::FullscreenBindGroup;
 pub use extra_bind_group::FragmentBindGroupBuilder;
 pub use node::FullscreenNode;
 pub use pipeline::{FullscreenPipeline, FullscreenPipelineConfig};
+pub use auto_storage::{AutoStorageBindGroups, AutoStorageLayouts};
 
 // ---------------------------------------------------------------------------
 // Re-exports for the fragment_layout! macro
@@ -215,6 +191,20 @@ pub trait FragmentAppExt {
         layout_system: impl IntoScheduleConfigs<ScheduleSystem, LM>,
         prepare_system: impl IntoScheduleConfigs<ScheduleSystem, PM>,
     ) -> &mut Self;
+
+    /// Register an auto-managed read-only storage buffer at the given WGSL
+    /// `@group(N)` index (must be ≥ 1; group 0 is the uniform).
+    ///
+    /// `S` must be inserted as a `Resource` in the main world. The library
+    /// extracts it to the render world and uploads it to a storage buffer every
+    /// frame, identical to how the uniform is handled.
+    ///
+    /// Call this multiple times with contiguous, ascending indices to register
+    /// multiple storage buffers. Do not mix with `register_extra_bind_group`
+    /// for the same shader.
+    fn register_storage_buffer<S>(&mut self, group_index: u32) -> &mut Self
+    where
+        S: ShaderType + WriteInto + Default + Resource + Clone + Send + Sync + 'static;
 }
 
 impl FragmentAppExt for App {
@@ -233,6 +223,65 @@ impl FragmentAppExt for App {
                 Render,
                 prepare_system.in_set(RenderSystems::PrepareBindGroups),
             );
+        self
+    }
+
+    fn register_storage_buffer<S>(&mut self, group_index: u32) -> &mut Self
+    where
+        S: ShaderType + WriteInto + Default + Resource + Clone + Send + Sync + 'static,
+    {
+        let render_app = self.sub_app_mut(RenderApp);
+
+        render_app.init_resource::<AutoStorageLayouts>();
+        render_app.init_resource::<AutoStorageBindGroups>();
+
+        // Eagerly insert the layout descriptor so init_pipeline can read it in
+        // the correct group-index order without requiring system ordering.
+        {
+            let world = render_app.world_mut();
+            let mut layouts = world.get_resource_mut::<AutoStorageLayouts>().unwrap();
+            layouts.0.insert(
+                group_index,
+                BindGroupLayoutDescriptor::new(
+                    "auto_storage_layout",
+                    &BindGroupLayoutEntries::single(
+                        ShaderStages::FRAGMENT,
+                        storage_buffer_read_only_sized(false, None),
+                    ),
+                ),
+            );
+        }
+
+        // Extract S from main world → render world each frame.
+        render_app.add_systems(ExtractSchedule, auto_storage::extract_storage::<S>);
+
+        // Build the bind group each frame from the render-world S resource.
+        render_app.add_systems(
+            Render,
+            (move |
+                mut auto_bind_groups: ResMut<AutoStorageBindGroups>,
+                auto_layouts: Res<AutoStorageLayouts>,
+                pipeline_cache: Res<PipelineCache>,
+                render_device: Res<RenderDevice>,
+                render_queue: Res<RenderQueue>,
+                resource: Option<Res<S>>,
+            | {
+                let Some(resource) = resource else { return };
+                let Some(descriptor) = auto_layouts.0.get(&group_index) else { return };
+                let layout = pipeline_cache.get_bind_group_layout(descriptor);
+                let mut buf = StorageBuffer::default();
+                buf.set((*resource).clone());
+                buf.write_buffer(&render_device, &render_queue);
+                let Some(binding) = buf.binding() else { return };
+                let bind_group = render_device.create_bind_group(
+                    "auto_storage_bind_group",
+                    &layout,
+                    &BindGroupEntries::sequential((binding,)),
+                );
+                auto_bind_groups.0.insert(group_index, bind_group);
+            }).in_set(RenderSystems::PrepareBindGroups),
+        );
+
         self
     }
 }
@@ -307,6 +356,8 @@ where
 
         render_app.init_resource::<FragmentExtraLayouts>();
         render_app.init_resource::<FragmentExtraBindGroups>();
+        render_app.init_resource::<AutoStorageLayouts>();
+        render_app.init_resource::<AutoStorageBindGroups>();
 
         render_app.add_systems(
             RenderStartup,

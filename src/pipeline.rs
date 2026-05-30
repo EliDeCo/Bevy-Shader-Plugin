@@ -12,7 +12,7 @@ use bevy::{
     },
 };
 
-use crate::FragmentExtraLayouts;
+use crate::{FragmentExtraLayouts, auto_storage::AutoStorageLayouts};
 
 /// Inserted during `Plugin::build` so `init_pipeline` can read the shader path
 /// without being generic over U.
@@ -46,6 +46,7 @@ pub(crate) fn init_pipeline<U: ShaderType + encase::internal::WriteInto + Send +
     pipeline_cache: Res<PipelineCache>,
     config: Res<FullscreenPipelineConfig>,
     extra_layouts: Res<FragmentExtraLayouts>,
+    auto_storage_layouts: Res<AutoStorageLayouts>,
 ) {
     let per_frame_layout = BindGroupLayoutDescriptor::new(
         "fullscreen_per_frame_layout",
@@ -55,8 +56,14 @@ pub(crate) fn init_pipeline<U: ShaderType + encase::internal::WriteInto + Send +
         ),
     );
 
-    // Group 0 is always the per-frame uniform. Groups 1..n are user-supplied.
+    // Group 0 is the per-frame uniform. Auto-storage buffers occupy the next
+    // groups in ascending key order, followed by any manual extra layouts.
+    debug_assert!(
+        auto_storage_layouts.0.keys().enumerate().all(|(i, &k)| k == i as u32 + 1),
+        "register_storage_buffer group indices must be contiguous starting at 1"
+    );
     let mut all_layouts = vec![per_frame_layout.clone()];
+    all_layouts.extend(auto_storage_layouts.0.values().cloned());
     all_layouts.extend(extra_layouts.0.iter().cloned());
 
     let shader = asset_server.load(config.shader_path);
@@ -83,9 +90,10 @@ pub(crate) fn init_pipeline<U: ShaderType + encase::internal::WriteInto + Send +
         ..default()
     });
 
-    let extra_compiled: Vec<BindGroupLayout> = extra_layouts
+    let extra_compiled: Vec<BindGroupLayout> = auto_storage_layouts
         .0
-        .iter()
+        .values()
+        .chain(extra_layouts.0.iter())
         .map(|desc| pipeline_cache.get_bind_group_layout(desc))
         .collect();
 

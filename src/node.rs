@@ -11,7 +11,7 @@ use bevy::{
     },
 };
 
-use crate::{FragmentExtraBindGroups, bind_group::FullscreenBindGroup, pipeline::FullscreenPipeline};
+use crate::{FragmentExtraBindGroups, auto_storage::AutoStorageBindGroups, bind_group::FullscreenBindGroup, pipeline::FullscreenPipeline};
 
 /// The render graph node that executes the fullscreen fragment shader.
 ///
@@ -65,6 +65,12 @@ where
 
         render_pass.set_render_pipeline(pipeline);
         render_pass.set_bind_group(0, &bind_group_res.bind_group, &[]);
+
+        if let Some(auto) = world.get_resource::<AutoStorageBindGroups>() {
+            for (group_index, bind_group) in auto.0.iter() {
+                render_pass.set_bind_group(*group_index as usize, bind_group, &[]);
+            }
+        }
 
         if let Some(extra) = world.get_resource::<FragmentExtraBindGroups>() {
             for (i, bind_group) in extra.0.iter().enumerate() {
