@@ -4,15 +4,22 @@ use bevy::{
     asset::AssetServer,
     core_pipeline::FullscreenShader,
     prelude::*,
-    render::render_resource::{
-        BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntries, BlendState,
-        CachedRenderPipelineId, ColorTargetState, ColorWrites, FragmentState, MultisampleState,
-        PipelineCache, RenderPipelineDescriptor, ShaderStages, ShaderType, TextureFormat,
-        binding_types::uniform_buffer,
+    render::{
+        render_resource::{
+            BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
+            BindGroupLayoutEntry, BindingType, BlendState, BufferBindingType,
+            CachedRenderPipelineId, ColorTargetState, ColorWrites, FragmentState,
+            MultisampleState, PipelineCache, RenderPipelineDescriptor, ShaderStages,
+            ShaderType, TextureFormat,
+            binding_types::uniform_buffer,
+        },
     },
 };
 
-use crate::{FragmentExtraLayouts, auto_storage::AutoStorageLayouts};
+use crate::{
+    FragmentExtraLayouts,
+    auto_storage::{AutoStorageCompiledLayouts, AutoStorageLayouts},
+};
 
 /// Inserted during `Plugin::build` so `init_pipeline` can read the shader path
 /// without being generic over U.
@@ -47,6 +54,7 @@ pub(crate) fn init_pipeline<U: ShaderType + encase::internal::WriteInto + Send +
     config: Res<FullscreenPipelineConfig>,
     extra_layouts: Res<FragmentExtraLayouts>,
     auto_storage_layouts: Res<AutoStorageLayouts>,
+    mut compiled_layouts: ResMut<AutoStorageCompiledLayouts>,
 ) {
     let per_frame_layout = BindGroupLayoutDescriptor::new(
         "fullscreen_per_frame_layout",
@@ -63,8 +71,29 @@ pub(crate) fn init_pipeline<U: ShaderType + encase::internal::WriteInto + Send +
             .all(|(i, &k)| k == i as u32 + 1),
         "register_storage_buffer group indices must be contiguous starting at 1"
     );
+
+    // Build one BindGroupLayoutDescriptor per auto-storage group and compile it.
+    // `BindGroupLayoutDescriptor::new` takes `&[BindGroupLayoutEntry]`, so runtime
+    // binding sets work directly.
     let mut all_layouts = vec![per_frame_layout.clone()];
-    all_layouts.extend(auto_storage_layouts.0.values().cloned());
+    for (&group_index, binding_set) in auto_storage_layouts.0.iter() {
+        let entries: Vec<BindGroupLayoutEntry> = binding_set
+            .iter()
+            .map(|&binding| BindGroupLayoutEntry {
+                binding,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            })
+            .collect();
+        let desc = BindGroupLayoutDescriptor::new("auto_storage_layout", &entries);
+        compiled_layouts.0.insert(group_index, pipeline_cache.get_bind_group_layout(&desc));
+        all_layouts.push(desc);
+    }
     all_layouts.extend(extra_layouts.0.iter().cloned());
 
     let shader = asset_server.load(config.shader_path);
@@ -91,11 +120,12 @@ pub(crate) fn init_pipeline<U: ShaderType + encase::internal::WriteInto + Send +
         ..default()
     });
 
-    let extra_compiled: Vec<BindGroupLayout> = auto_storage_layouts
+    // FullscreenPipeline::extra_layouts: compiled auto-storage first, then manual.
+    let extra_compiled: Vec<BindGroupLayout> = compiled_layouts
         .0
         .values()
-        .chain(extra_layouts.0.iter())
-        .map(|desc| pipeline_cache.get_bind_group_layout(desc))
+        .cloned()
+        .chain(extra_layouts.0.iter().map(|desc| pipeline_cache.get_bind_group_layout(desc)))
         .collect();
 
     commands.insert_resource(FullscreenPipeline::<U> {

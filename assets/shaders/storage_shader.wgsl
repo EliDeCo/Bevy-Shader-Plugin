@@ -8,8 +8,8 @@ struct ExampleUniform {
 var<uniform> u: ExampleUniform;
 
 @group(1) @binding(0) var<storage, read> red:   array<f32, 64>;
-@group(2) @binding(0) var<storage, read> green: array<f32, 64>;
-@group(3) @binding(0) var<storage, read> blue:  array<f32, 64>;
+@group(1) @binding(1) var<storage, read> green: array<f32, 64>;
+@group(1) @binding(2) var<storage, read> blue:  array<f32, 64>;
 
 @fragment
 fn frag_main(@builtin(position) frag_coords: vec4<f32>) -> @location(0) vec4<f32> {
