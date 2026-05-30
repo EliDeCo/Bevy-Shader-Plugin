@@ -62,8 +62,8 @@ pub(crate) fn init_pipeline(
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
-                    AutoBufferKind::StorageRead => BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
+                    AutoBufferKind::Storage { read_only } => BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },

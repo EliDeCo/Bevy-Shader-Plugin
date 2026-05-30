@@ -159,7 +159,13 @@ pub trait FragmentAppExt {
     ///
     /// Multiple calls with the same `group_index` but different `binding_index` values
     /// pack several storage bindings into one bind group.
-    fn register_storage_buffer<S>(&mut self, group_index: u32, binding_index: u32) -> &mut Self
+    /// `read_write`: `false` → `var<storage, read>`, `true` → `var<storage, read_write>`.
+    fn register_storage_buffer<S>(
+        &mut self,
+        group_index: u32,
+        binding_index: u32,
+        read_write: bool,
+    ) -> &mut Self
     where
         S: ShaderType + WriteInto + Default + Resource + Clone + Send + Sync + 'static;
 }
@@ -228,7 +234,12 @@ impl FragmentAppExt for App {
         self
     }
 
-    fn register_storage_buffer<S>(&mut self, group_index: u32, binding_index: u32) -> &mut Self
+    fn register_storage_buffer<S>(
+        &mut self,
+        group_index: u32,
+        binding_index: u32,
+        read_write: bool,
+    ) -> &mut Self
     where
         S: ShaderType + WriteInto + Default + Resource + Clone + Send + Sync + 'static,
     {
@@ -242,11 +253,12 @@ impl FragmentAppExt for App {
         {
             let world = render_app.world_mut();
             let mut layouts = world.get_resource_mut::<AutoBufferLayouts>().unwrap();
-            layouts
-                .0
-                .entry(group_index)
-                .or_default()
-                .insert(binding_index, AutoBufferKind::StorageRead);
+            layouts.0.entry(group_index).or_default().insert(
+                binding_index,
+                AutoBufferKind::Storage {
+                    read_only: !read_write,
+                },
+            );
         }
 
         render_app.add_systems(ExtractSchedule, auto_buffer::extract_buffer::<S>);

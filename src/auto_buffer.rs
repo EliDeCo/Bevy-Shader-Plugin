@@ -11,11 +11,11 @@ use bevy::{
     },
 };
 
-/// Whether a registered auto-managed buffer is a uniform or read-only storage buffer.
+/// Whether a registered auto-managed buffer is a uniform or a storage buffer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AutoBufferKind {
     Uniform,
-    StorageRead,
+    Storage { read_only: bool },
 }
 
 /// (group → binding → kind) for all auto-managed buffers.
