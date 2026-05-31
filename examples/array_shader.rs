@@ -1,5 +1,5 @@
-use bevy::{prelude::*, render::render_resource::ShaderType, window::PrimaryWindow};
-use bevy_fragment_shader::{ArrayBufferChanges, FragmentAppExt, FullscreenFragmentPlugin};
+use bevy::prelude::*;
+use bevy_fragment_shader::prelude::*;
 
 const SHADER_PATH: &str = "shaders/array_shader.wgsl";
 
@@ -11,7 +11,6 @@ struct Brightnesses;
 struct FrameUniform {
     resolution: Vec2,
     time: f32,
-    _pad: f32,
 }
 
 fn main() {

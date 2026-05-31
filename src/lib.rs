@@ -98,6 +98,12 @@ pub use extra_bind_group::FragmentBindGroupBuilder;
 pub use node::FullscreenNode;
 pub use pipeline::{FullscreenPipeline, FullscreenPipelineConfig};
 
+pub mod prelude {
+    pub use crate::{ArrayBufferChanges, FragmentAppExt, FullscreenFragmentPlugin};
+    pub use bevy::render::render_resource::ShaderType;
+    pub use bevy::window::PrimaryWindow;
+}
+
 // ---------------------------------------------------------------------------
 // Re-exports for the fragment_layout! macro
 // ---------------------------------------------------------------------------

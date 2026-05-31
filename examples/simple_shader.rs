@@ -1,5 +1,5 @@
-use bevy::{prelude::*, render::render_resource::ShaderType, window::PrimaryWindow};
-use bevy_fragment_shader::{FragmentAppExt, FullscreenFragmentPlugin};
+use bevy::prelude::*;
+use bevy_fragment_shader::prelude::*;
 
 const SHADER_PATH: &str = "shaders/simple_shader.wgsl";
 
