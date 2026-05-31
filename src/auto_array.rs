@@ -21,13 +21,15 @@ use crate::auto_buffer::PendingBufferBindings;
 #[derive(Resource)]
 pub struct ArrayBufferChanges<Tag> {
     pub(crate) changes: Vec<(usize, Vec<u8>)>,
-    _marker: PhantomData<Tag>,
+    pub(crate) len: usize,
+    pub(crate) _marker: PhantomData<Tag>,
 }
 
 impl<Tag> Default for ArrayBufferChanges<Tag> {
     fn default() -> Self {
         Self {
             changes: Vec::new(),
+            len: 0,
             _marker: PhantomData,
         }
     }
@@ -63,6 +65,17 @@ impl<Tag> ArrayBufferChanges<Tag> {
             self.set(index, value);
         }
     }
+
+    /// Queue a change to set every element in the buffer to `value`.
+    /// The value is serialized once and the bytes are reused for each element.
+    pub fn set_all<T: ShaderSize + WriteInto>(&mut self, value: T) {
+        let el_size = T::SHADER_SIZE.get() as usize;
+        let mut bytes = vec![0u8; el_size];
+        encase::StorageBuffer::new(&mut bytes[..]).write(&value).unwrap();
+        for i in 0..self.len {
+            self.changes.push((i, bytes.clone()));
+        }
+    }
 }
 
 /// Render-world resource holding the persistent GPU buffer and element stride.
@@ -82,6 +95,7 @@ pub(crate) fn extract_array_changes<Tag: Send + Sync + 'static>(
     if let Some(changes) = changes.as_deref() {
         commands.insert_resource(ArrayBufferChanges::<Tag> {
             changes: changes.changes.clone(),
+            len: changes.len,
             _marker: PhantomData,
         });
     }

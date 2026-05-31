@@ -55,30 +55,17 @@ fn animate_colors(mut changes: ResMut<ArrayBufferChanges<Colors>>, time: Res<Tim
     let t = time.elapsed_secs();
     let color_a = hsl_to_rgba(t * 0.15, 1.0, 0.5);
     let color_b = hsl_to_rgba(t * 0.25 + 0.5, 1.0, 0.5);
-    changes.set_many([
-        (8, color_a),
-        (9, color_a),
-        (24, color_b),
-        (25, color_b),
-    ]);
+    changes.set_many([(8, color_a), (9, color_a), (24, color_b), (25, color_b)]);
 }
 
 /// Updates two fixed pairs of brightness columns (16–17 and 40–41) each frame.
 /// These are disjoint from the color columns.
-fn animate_brightnesses(
-    mut changes: ResMut<ArrayBufferChanges<Brightnesses>>,
-    time: Res<Time>,
-) {
+fn animate_brightnesses(mut changes: ResMut<ArrayBufferChanges<Brightnesses>>, time: Res<Time>) {
     let t = time.elapsed_secs();
     let tau = std::f32::consts::TAU;
     let b1 = Vec4::splat(0.5 + 0.5 * (t * tau * 0.4).sin());
     let b2 = Vec4::splat(0.5 + 0.5 * (t * tau * 0.6 + std::f32::consts::PI).sin());
-    changes.set_many([
-        (16, b1),
-        (17, b1),
-        (40, b2),
-        (41, b2),
-    ]);
+    changes.set_many([(16, b1), (17, b1), (40, b2), (41, b2)]);
 }
 
 fn hsl_to_rgba(h: f32, s: f32, l: f32) -> Vec4 {

@@ -330,7 +330,11 @@ impl FragmentAppExt for App {
         Tag: Send + Sync + 'static,
         T: ShaderSize + WriteInto + Default + Send + Sync + 'static,
     {
-        self.init_resource::<ArrayBufferChanges<Tag>>();
+        self.insert_resource(ArrayBufferChanges::<Tag> {
+            changes: Vec::new(),
+            len: N,
+            _marker: std::marker::PhantomData,
+        });
         self.add_systems(First, auto_array::clear_array_changes::<Tag>);
 
         let render_app = self.sub_app_mut(RenderApp);
