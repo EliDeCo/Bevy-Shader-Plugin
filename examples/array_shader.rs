@@ -50,38 +50,35 @@ fn update_uniform(
 /// Updates two fixed pairs of color columns (8–9 and 24–25) each frame.
 /// Both pairs are consecutive, so each becomes one GPU write call.
 /// The non-adjacent groups produce two separate write_buffer calls.
+/// Updates two fixed pairs of color columns (8–9 and 24–25) each frame.
 fn animate_colors(mut changes: ResMut<ArrayBufferChanges<Colors>>, time: Res<Time>) {
     let t = time.elapsed_secs();
-
-    // Group A: columns 8–9, hue cycles slowly.
     let color_a = hsl_to_rgba(t * 0.15, 1.0, 0.5);
-    changes.set(8, color_a);
-    changes.set(9, color_a);
-
-    // Group B: columns 24–25, hue cycles at a different rate and offset.
     let color_b = hsl_to_rgba(t * 0.25 + 0.5, 1.0, 0.5);
-    changes.set(24, color_b);
-    changes.set(25, color_b);
+    changes.set_many([
+        (8, color_a),
+        (9, color_a),
+        (24, color_b),
+        (25, color_b),
+    ]);
 }
 
 /// Updates two fixed pairs of brightness columns (16–17 and 40–41) each frame.
-/// These are disjoint from the color columns and from each other.
+/// These are disjoint from the color columns.
 fn animate_brightnesses(
     mut changes: ResMut<ArrayBufferChanges<Brightnesses>>,
     time: Res<Time>,
 ) {
     let t = time.elapsed_secs();
     let tau = std::f32::consts::TAU;
-
-    // Group C: columns 16–17, brightness pulses at 0.4 Hz.
-    let b1 = 0.5 + 0.5 * (t * tau * 0.4).sin();
-    changes.set(16, Vec4::splat(b1));
-    changes.set(17, Vec4::splat(b1));
-
-    // Group D: columns 40–41, brightness pulses at 0.6 Hz, opposite phase.
-    let b2 = 0.5 + 0.5 * (t * tau * 0.6 + std::f32::consts::PI).sin();
-    changes.set(40, Vec4::splat(b2));
-    changes.set(41, Vec4::splat(b2));
+    let b1 = Vec4::splat(0.5 + 0.5 * (t * tau * 0.4).sin());
+    let b2 = Vec4::splat(0.5 + 0.5 * (t * tau * 0.6 + std::f32::consts::PI).sin());
+    changes.set_many([
+        (16, b1),
+        (17, b1),
+        (40, b2),
+        (41, b2),
+    ]);
 }
 
 fn hsl_to_rgba(h: f32, s: f32, l: f32) -> Vec4 {

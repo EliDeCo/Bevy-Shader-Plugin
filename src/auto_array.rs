@@ -44,6 +44,25 @@ impl<Tag> ArrayBufferChanges<Tag> {
             .unwrap();
         self.changes.push((index, bytes));
     }
+
+    /// Queue multiple changes at once from any iterable of `(index, value)` pairs.
+    ///
+    /// Equivalent to calling [`set`](Self::set) for each pair. Accepts arrays, vecs,
+    /// iterators, or anything that implements `IntoIterator<Item = (usize, T)>`:
+    ///
+    /// ```rust,ignore
+    /// changes.set_many([(8, color_a), (9, color_a), (24, color_b), (25, color_b)]);
+    /// changes.set_many((0..4).map(|i| (i, Vec4::ONE)));
+    /// ```
+    pub fn set_many<T, I>(&mut self, pairs: I)
+    where
+        T: ShaderSize + WriteInto,
+        I: IntoIterator<Item = (usize, T)>,
+    {
+        for (index, value) in pairs {
+            self.set(index, value);
+        }
+    }
 }
 
 /// Render-world resource holding the persistent GPU buffer and element stride.
