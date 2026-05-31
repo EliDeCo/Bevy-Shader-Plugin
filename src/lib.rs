@@ -6,14 +6,13 @@ mod pipeline;
 
 use bevy::{
     core_pipeline::core_3d::graph::{Core3d, Node3d},
-    ecs::system::ScheduleSystem,
     prelude::*,
     render::{
         ExtractSchedule, Render, RenderApp, RenderStartup, RenderSystems,
         render_graph::{RenderGraphExt, RenderLabel, ViewNodeRunner},
         render_resource::{
-            BindGroup, BindGroupLayoutDescriptor, BindGroupLayoutEntries, ShaderStages, ShaderType,
-            StorageBuffer, UniformBuffer,
+            BindGroup, BindGroupLayoutDescriptor, BindGroupLayoutEntries, Buffer, ShaderStages,
+            ShaderType, StorageBuffer, UniformBuffer,
             binding_types::{storage_buffer_read_only_sized, storage_buffer_sized},
         },
         renderer::{RenderDevice, RenderQueue},
@@ -27,6 +26,67 @@ fn init_auto_buffer_resources(render_app: &mut bevy::app::SubApp) {
     render_app.init_resource::<AutoBufferBindGroups>();
     render_app.init_resource::<AutoBufferCompiledLayouts>();
     render_app.init_resource::<PendingBufferBindings>();
+}
+
+fn uniform_write<T: ShaderType + WriteInto + Default>(
+    value: T,
+    device: &RenderDevice,
+    queue: &RenderQueue,
+) -> Option<Buffer> {
+    let mut buf = UniformBuffer::default();
+    buf.set(value);
+    buf.write_buffer(device, queue);
+    buf.buffer().cloned()
+}
+
+fn storage_write<T: ShaderType + WriteInto + Default>(
+    value: T,
+    device: &RenderDevice,
+    queue: &RenderQueue,
+) -> Option<Buffer> {
+    let mut buf = StorageBuffer::default();
+    buf.set(value);
+    buf.write_buffer(device, queue);
+    buf.buffer().cloned()
+}
+
+fn register_buffer_impl<T, F>(
+    render_app: &mut bevy::app::SubApp,
+    group_index: u32,
+    binding_index: u32,
+    kind: AutoBufferKind,
+    write_fn: F,
+) where
+    T: Resource + Clone + Send + Sync + 'static,
+    F: Fn(T, &RenderDevice, &RenderQueue) -> Option<Buffer> + Send + Sync + 'static,
+{
+    init_auto_buffer_resources(render_app);
+
+    {
+        let world = render_app.world_mut();
+        let mut layouts = world.get_resource_mut::<AutoBufferLayouts>().unwrap();
+        layouts
+            .0
+            .entry(group_index)
+            .or_default()
+            .insert(binding_index, kind);
+    }
+
+    render_app.add_systems(ExtractSchedule, auto_buffer::extract_buffer::<T>);
+
+    render_app.add_systems(
+        Render,
+        (move |mut pending: ResMut<PendingBufferBindings>,
+               render_device: Res<RenderDevice>,
+               render_queue: Res<RenderQueue>,
+               resource: Option<Res<T>>| {
+            let Some(resource) = resource else { return };
+            if let Some(buf) = write_fn((*resource).clone(), &render_device, &render_queue) {
+                pending.0.insert((group_index, binding_index), buf);
+            }
+        })
+        .in_set(RenderSystems::PrepareBindGroups),
+    );
 }
 
 pub use auto_array::{ArrayBufferChanges, ArrayBufferState};
@@ -64,8 +124,8 @@ pub enum FragmentSystems {
 
 /// Bind group layout descriptors for the manual extra bind groups.
 ///
-/// Populate this resource in the layout system passed to
-/// [`FragmentAppExt::register_extra_bind_group`].
+/// Populate this resource in a layout system registered in `RenderStartup`
+/// before [`FragmentSystems::InitPipeline`].
 #[derive(Resource, Default)]
 pub struct FragmentExtraLayouts(pub Vec<BindGroupLayoutDescriptor>);
 
@@ -139,18 +199,6 @@ impl RenderLabel for FullscreenShaderNode {
 
 /// Extension methods on [`App`] for registering buffer bindings and manual bind groups.
 pub trait FragmentAppExt {
-    /// Register a layout-setup system and a per-frame bind-group system for
-    /// manual extra bind groups.
-    ///
-    /// Both systems run in the render world. `layout_system` runs in `RenderStartup`
-    /// before [`FragmentSystems::InitPipeline`]; `prepare_system` runs in
-    /// `RenderSystems::PrepareBindGroups`.
-    fn register_extra_bind_group<LM, PM>(
-        &mut self,
-        layout_system: impl IntoScheduleConfigs<ScheduleSystem, LM>,
-        prepare_system: impl IntoScheduleConfigs<ScheduleSystem, PM>,
-    ) -> &mut Self;
-
     /// Register an auto-managed uniform buffer at `@group(group_index) @binding(binding_index)`.
     ///
     /// `U` must be inserted as a [`Resource`] in the main world. The library extracts
@@ -213,63 +261,17 @@ pub trait FragmentAppExt {
 }
 
 impl FragmentAppExt for App {
-    fn register_extra_bind_group<LM, PM>(
-        &mut self,
-        layout_system: impl IntoScheduleConfigs<ScheduleSystem, LM>,
-        prepare_system: impl IntoScheduleConfigs<ScheduleSystem, PM>,
-    ) -> &mut Self {
-        let render_app = self.sub_app_mut(RenderApp);
-        render_app
-            .add_systems(
-                RenderStartup,
-                layout_system.before(FragmentSystems::InitPipeline),
-            )
-            .add_systems(
-                Render,
-                prepare_system.in_set(RenderSystems::PrepareBindGroups),
-            );
-        self
-    }
-
     fn register_uniform_buffer<U>(&mut self, group_index: u32, binding_index: u32) -> &mut Self
     where
         U: ShaderType + WriteInto + Default + Resource + Clone + Send + Sync + 'static,
     {
-        let render_app = self.sub_app_mut(RenderApp);
-
-        init_auto_buffer_resources(render_app);
-
-        {
-            let world = render_app.world_mut();
-            let mut layouts = world.get_resource_mut::<AutoBufferLayouts>().unwrap();
-            layouts
-                .0
-                .entry(group_index)
-                .or_default()
-                .insert(binding_index, AutoBufferKind::Uniform);
-        }
-
-        render_app.add_systems(ExtractSchedule, auto_buffer::extract_buffer::<U>);
-
-        render_app.add_systems(
-            Render,
-            (move |mut pending: ResMut<PendingBufferBindings>,
-                   render_device: Res<RenderDevice>,
-                   render_queue: Res<RenderQueue>,
-                   resource: Option<Res<U>>| {
-                let Some(resource) = resource else { return };
-                let mut buf = UniformBuffer::default();
-                buf.set((*resource).clone());
-                buf.write_buffer(&render_device, &render_queue);
-                if let Some(raw_buf) = buf.buffer() {
-                    pending
-                        .0
-                        .insert((group_index, binding_index), raw_buf.clone());
-                }
-            })
-            .in_set(RenderSystems::PrepareBindGroups),
+        register_buffer_impl::<U, _>(
+            self.sub_app_mut(RenderApp),
+            group_index,
+            binding_index,
+            AutoBufferKind::Uniform,
+            uniform_write::<U>,
         );
-
         self
     }
 
@@ -282,42 +284,15 @@ impl FragmentAppExt for App {
     where
         S: ShaderType + WriteInto + Default + Resource + Clone + Send + Sync + 'static,
     {
-        let render_app = self.sub_app_mut(RenderApp);
-
-        init_auto_buffer_resources(render_app);
-
-        {
-            let world = render_app.world_mut();
-            let mut layouts = world.get_resource_mut::<AutoBufferLayouts>().unwrap();
-            layouts.0.entry(group_index).or_default().insert(
-                binding_index,
-                AutoBufferKind::Storage {
-                    read_only: !read_write,
-                },
-            );
-        }
-
-        render_app.add_systems(ExtractSchedule, auto_buffer::extract_buffer::<S>);
-
-        render_app.add_systems(
-            Render,
-            (move |mut pending: ResMut<PendingBufferBindings>,
-                   render_device: Res<RenderDevice>,
-                   render_queue: Res<RenderQueue>,
-                   resource: Option<Res<S>>| {
-                let Some(resource) = resource else { return };
-                let mut buf = StorageBuffer::default();
-                buf.set((*resource).clone());
-                buf.write_buffer(&render_device, &render_queue);
-                if let Some(raw_buf) = buf.buffer() {
-                    pending
-                        .0
-                        .insert((group_index, binding_index), raw_buf.clone());
-                }
-            })
-            .in_set(RenderSystems::PrepareBindGroups),
+        register_buffer_impl::<S, _>(
+            self.sub_app_mut(RenderApp),
+            group_index,
+            binding_index,
+            AutoBufferKind::Storage {
+                read_only: !read_write,
+            },
+            storage_write::<S>,
         );
-
         self
     }
 
