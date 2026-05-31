@@ -1,7 +1,6 @@
 struct FrameUniform {
     resolution: vec2<f32>,
     time: f32,
-    _pad: f32,
 }
 
 @group(0) @binding(0) var<uniform> u: FrameUniform;

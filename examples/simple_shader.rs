@@ -10,7 +10,6 @@ const SHADER_PATH: &str = "shaders/simple_shader.wgsl";
 struct ExampleUniform {
     resolution: Vec2,
     time: f32,
-    _pad: f32,
 }
 
 fn main() {

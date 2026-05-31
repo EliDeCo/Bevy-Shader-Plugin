@@ -7,7 +7,6 @@ const SHADER_PATH: &str = "shaders/storage_shader.wgsl";
 struct ExampleUniform {
     resolution: Vec2,
     time: f32,
-    _pad: f32,
 }
 
 /// Red channel values for each of the 64 vertical bands, updated every frame.
