@@ -22,6 +22,13 @@ use bevy::{
 use encase::{ShaderSize, internal::WriteInto};
 use wgpu::{BufferUsages, util::BufferInitDescriptor};
 
+fn init_auto_buffer_resources(render_app: &mut bevy::app::SubApp) {
+    render_app.init_resource::<AutoBufferLayouts>();
+    render_app.init_resource::<AutoBufferBindGroups>();
+    render_app.init_resource::<AutoBufferCompiledLayouts>();
+    render_app.init_resource::<PendingBufferBindings>();
+}
+
 pub use auto_array::{ArrayBufferChanges, ArrayBufferState};
 pub use auto_buffer::{
     AutoBufferBindGroups, AutoBufferCompiledLayouts, AutoBufferKind, AutoBufferLayouts,
@@ -230,10 +237,7 @@ impl FragmentAppExt for App {
     {
         let render_app = self.sub_app_mut(RenderApp);
 
-        render_app.init_resource::<AutoBufferLayouts>();
-        render_app.init_resource::<AutoBufferBindGroups>();
-        render_app.init_resource::<AutoBufferCompiledLayouts>();
-        render_app.init_resource::<PendingBufferBindings>();
+        init_auto_buffer_resources(render_app);
 
         {
             let world = render_app.world_mut();
@@ -280,10 +284,7 @@ impl FragmentAppExt for App {
     {
         let render_app = self.sub_app_mut(RenderApp);
 
-        render_app.init_resource::<AutoBufferLayouts>();
-        render_app.init_resource::<AutoBufferBindGroups>();
-        render_app.init_resource::<AutoBufferCompiledLayouts>();
-        render_app.init_resource::<PendingBufferBindings>();
+        init_auto_buffer_resources(render_app);
 
         {
             let world = render_app.world_mut();
@@ -339,10 +340,7 @@ impl FragmentAppExt for App {
 
         let render_app = self.sub_app_mut(RenderApp);
 
-        render_app.init_resource::<AutoBufferLayouts>();
-        render_app.init_resource::<AutoBufferBindGroups>();
-        render_app.init_resource::<AutoBufferCompiledLayouts>();
-        render_app.init_resource::<PendingBufferBindings>();
+        init_auto_buffer_resources(render_app);
 
         {
             let world = render_app.world_mut();
@@ -467,10 +465,7 @@ impl Plugin for FullscreenFragmentPlugin {
 
         render_app.init_resource::<FragmentExtraLayouts>();
         render_app.init_resource::<FragmentExtraBindGroups>();
-        render_app.init_resource::<AutoBufferLayouts>();
-        render_app.init_resource::<AutoBufferBindGroups>();
-        render_app.init_resource::<AutoBufferCompiledLayouts>();
-        render_app.init_resource::<PendingBufferBindings>();
+        init_auto_buffer_resources(render_app);
 
         render_app.add_systems(
             Render,

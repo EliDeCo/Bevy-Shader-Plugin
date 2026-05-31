@@ -100,7 +100,7 @@ pub(crate) fn finalize_buffer_bind_groups(
             .wgpu_device()
             .create_bind_group(&BindGroupDescriptor {
                 label: Some("auto_buffer_bind_group"),
-                layout: &*layout,
+                layout: layout,
                 entries: &entries,
             });
 

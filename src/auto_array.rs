@@ -35,15 +35,26 @@ impl<Tag> Default for ArrayBufferChanges<Tag> {
     }
 }
 
+fn serialize_element<T: ShaderSize + WriteInto>(value: &T) -> Vec<u8> {
+    let el_size = T::SHADER_SIZE.get() as usize;
+    let mut bytes = vec![0u8; el_size];
+    encase::StorageBuffer::new(&mut bytes[..])
+        .write(value)
+        .unwrap();
+    bytes
+}
+
 impl<Tag> ArrayBufferChanges<Tag> {
     /// Queue a change: element at `index` will be updated to `value` this frame.
     /// The value is serialized to bytes immediately.
     pub fn set<T: ShaderSize + WriteInto>(&mut self, index: usize, value: T) {
-        let el_size = T::SHADER_SIZE.get() as usize;
-        let mut bytes = vec![0u8; el_size];
-        encase::StorageBuffer::new(&mut bytes[..])
-            .write(&value)
-            .unwrap();
+        if index >= self.len {
+            panic!(
+                "ArrayBufferChanges::set index out of bounds: {} >= {}",
+                index, self.len
+            );
+        }
+        let bytes = serialize_element(&value);
         self.changes.push((index, bytes));
     }
 
@@ -69,9 +80,8 @@ impl<Tag> ArrayBufferChanges<Tag> {
     /// Queue a change to set every element in the buffer to `value`.
     /// The value is serialized once and the bytes are reused for each element.
     pub fn set_all<T: ShaderSize + WriteInto>(&mut self, value: T) {
-        let el_size = T::SHADER_SIZE.get() as usize;
-        let mut bytes = vec![0u8; el_size];
-        encase::StorageBuffer::new(&mut bytes[..]).write(&value).unwrap();
+        let bytes = serialize_element(&value);
+        self.changes.reserve(self.len);
         for i in 0..self.len {
             self.changes.push((i, bytes.clone()));
         }

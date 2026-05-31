@@ -43,7 +43,7 @@ impl ViewNode for FullscreenNode {
 
         let mut render_pass = render_context.begin_tracked_render_pass(
             bevy::render::render_resource::RenderPassDescriptor {
-                label: Some("fullscreen_fragment_pass".into()),
+                label: Some("fullscreen_fragment_pass"),
                 color_attachments: &[Some(view_target.get_color_attachment())],
                 ..default()
             },
