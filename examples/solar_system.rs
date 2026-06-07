@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_fragment_shader::prelude::*;
+use bevy_fragment_shader_plugin::prelude::*;
 
 const SHADER_PATH: &str = "shaders/solar_system.wgsl";
 const N: usize = 8;

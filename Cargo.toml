@@ -1,7 +1,12 @@
 [package]
-name = "bevy_fragment_shader"
+name = "bevy-fragment-shader-plugin"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+description = "A Bevy plugin for streamlining fragment shader development."
+
+[lib]
+name = "bevy_fragment_shader_plugin"
 
 [dependencies]
 bevy = { version = "0.18.0", default-features = false, features = [
@@ -11,15 +16,3 @@ bevy = { version = "0.18.0", default-features = false, features = [
 ] }
 encase = "0.12"
 wgpu = "27"
-
-[dev-dependencies]
-bevy = { version = "0.18.0", default-features = false, features = ["3d", "dev"] }
-
-[profile.dev]
-opt-level = 1
-
-[profile.dev.package."*"]
-opt-level = 3
-
-[profile.release]
-opt-level = 3
