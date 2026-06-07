@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, marker::PhantomData};
 
 use bevy::{
     prelude::*,
-    render::{Extract, render_resource::Buffer, renderer::RenderQueue},
+    render::{MainWorld, render_resource::Buffer, renderer::RenderQueue},
 };
 use encase::ShaderSize;
 use encase::internal::WriteInto;
@@ -97,25 +97,26 @@ pub struct ArrayBufferState<Tag> {
     pub(crate) _marker: PhantomData<Tag>,
 }
 
-/// `ExtractSchedule` system: copies queued changes from main world to render world.
+/// `ExtractSchedule` system: moves queued changes from main world to render world.
+///
+/// Uses `mem::take` so the main-world vec is left empty after extraction — no
+/// separate clear system is needed, and changes set during `Startup` survive to
+/// the first extraction without being wiped by a `First`-schedule clear.
 pub(crate) fn extract_array_changes<Tag: Send + Sync + 'static>(
     mut commands: Commands,
-    changes: Extract<Option<Res<ArrayBufferChanges<Tag>>>>,
+    mut main_world: ResMut<MainWorld>,
 ) {
-    if let Some(changes) = changes.as_deref() {
-        commands.insert_resource(ArrayBufferChanges::<Tag> {
-            changes: changes.changes.clone(),
-            len: changes.len,
-            _marker: PhantomData,
-        });
-    }
-}
-
-/// Main-world `First`-schedule system: clears queued changes from the previous frame.
-pub(crate) fn clear_array_changes<Tag: Send + Sync + 'static>(
-    mut changes: ResMut<ArrayBufferChanges<Tag>>,
-) {
-    changes.changes.clear();
+    let extracted = {
+        let Some(mut changes) = main_world.get_resource_mut::<ArrayBufferChanges<Tag>>() else {
+            return;
+        };
+        (std::mem::take(&mut changes.changes), changes.len)
+    };
+    commands.insert_resource(ArrayBufferChanges::<Tag> {
+        changes: extracted.0,
+        len: extracted.1,
+        _marker: PhantomData,
+    });
 }
 
 /// Applies pending changes to the GPU buffer via contiguous-run `write_buffer` batching,

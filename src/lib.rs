@@ -317,7 +317,6 @@ impl FragmentAppExt for App {
             len: N,
             _marker: std::marker::PhantomData,
         });
-        self.add_systems(First, auto_array::clear_array_changes::<Tag>);
 
         let render_app = self.sub_app_mut(RenderApp);
 
