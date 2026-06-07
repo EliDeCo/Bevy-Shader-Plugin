@@ -57,8 +57,11 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands) {
+fn setup(mut commands: Commands, mut changes: ResMut<ArrayBufferChanges<PlanetColors>>) {
     commands.spawn((Camera3d::default(), Msaa::Off));
+    for i in 0..N {
+        changes.set(i, planet_color(i, 0));
+    }
 }
 
 fn update_resolution(

@@ -14,7 +14,21 @@ struct FrameUniform {
 const STAR_CENTER: vec2<f32> = vec2<f32>(0.5, 0.5);
 const STAR_RADIUS: f32 = 0.03;
 const STAR_COLOR: vec3<f32> = vec3<f32>(1.0, 0.95, 0.4);
-const BG_COLOR: vec3<f32> = vec3<f32>(0.01, 0.01, 0.05);
+
+fn hash(p: vec2<f32>) -> f32 {
+    return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
+}
+
+// Returns brightness of a background star at the given pixel coordinate.
+// Works in pixel space so cells are square regardless of window aspect ratio.
+fn star_field(pixel: vec2<f32>) -> f32 {
+    let cell = floor(pixel / 30.0);
+    let local = fract(pixel / 30.0);
+    if hash(cell) > 0.18 { return 0.0; }
+    let pos = vec2<f32>(hash(cell + vec2<f32>(7.3, 2.1)), hash(cell + vec2<f32>(3.7, 8.5)));
+    let brightness = 0.5 + 0.5 * hash(cell + vec2<f32>(5.0, 5.0));
+    return brightness * step(distance(local, pos), 0.06);
+}
 
 @fragment
 fn frag_main(@builtin(position) frag_coords: vec4<f32>) -> @location(0) vec4<f32> {
@@ -35,5 +49,6 @@ fn frag_main(@builtin(position) frag_coords: vec4<f32>) -> @location(0) vec4<f32
         }
     }
 
-    return vec4<f32>(BG_COLOR, 1.0);
+    let bg = star_field(frag_coords.xy);
+    return vec4<f32>(vec3<f32>(bg), 1.0);
 }
