@@ -212,6 +212,17 @@ pub trait FragmentAppExt {
     ///
     /// Multiple calls with the same `group_index` but different `binding_index` values
     /// pack several uniform bindings into one bind group.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// #[derive(Resource, Default, ShaderType, Clone)]
+    /// struct TimeUniforms { elapsed: f32 }
+    ///
+    /// app.insert_resource(TimeUniforms::default())
+    ///    .register_uniform_buffer::<TimeUniforms>(0, 0);
+    /// // WGSL: @group(0) @binding(0) var<uniform> time_uniforms: TimeUniforms;
+    /// ```
     fn register_uniform_buffer<U>(&mut self, group_index: u32, binding_index: u32) -> &mut Self
     where
         U: ShaderType + WriteInto + Default + Resource + Clone + Send + Sync + 'static;
@@ -224,6 +235,17 @@ pub trait FragmentAppExt {
     /// Multiple calls with the same `group_index` but different `binding_index` values
     /// pack several storage bindings into one bind group.
     /// `read_write`: `false` → `var<storage, read>`, `true` → `var<storage, read_write>`.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// #[derive(Resource, Default, ShaderType, Clone)]
+    /// struct Palette { colors: [Vec4; 16] }
+    ///
+    /// app.insert_resource(Palette::default())
+    ///    .register_storage_buffer::<Palette>(1, 0, false);
+    /// // WGSL: @group(1) @binding(0) var<storage, read> palette: Palette;
+    /// ```
     fn register_storage_buffer<S>(
         &mut self,
         group_index: u32,
@@ -422,12 +444,26 @@ macro_rules! fragment_layout {
 /// [`App`] to bind data to your shader.
 ///
 /// This plugin is not compatible with MSAA. Disable MSAA on all cameras.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// #[derive(Resource, Default, ShaderType, Clone)]
+/// struct MyUniforms { time: f32 }
+///
+/// App::new()
+///     .add_plugins(FullscreenFragmentPlugin::new("shaders/my_effect.wgsl"))
+///     .insert_resource(MyUniforms::default())
+///     .register_uniform_buffer::<MyUniforms>(0, 0)
+///     .run();
+/// ```
 pub struct FullscreenFragmentPlugin {
     /// Path to the fragment shader asset (e.g. `"shaders/effect.wgsl"`).
     pub shader_path: &'static str,
 }
 
 impl FullscreenFragmentPlugin {
+    /// Creates a new plugin that renders the shader at the given asset path.
     pub fn new(shader_path: &'static str) -> Self {
         Self { shader_path }
     }

@@ -18,6 +18,18 @@ use crate::auto_buffer::PendingBufferBindings;
 /// Changes are serialized to bytes immediately in [`set`](Self::set), then batched
 /// into contiguous `write_buffer` runs each frame. Indices need not be sorted or
 /// unique — duplicates use last-write-wins.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// struct Colors;
+/// // registered via: app.register_array_buffer::<Colors, Vec4, 64>(0, 0, false)
+///
+/// fn update(mut changes: ResMut<ArrayBufferChanges<Colors>>) {
+///     changes.set(0, Vec4::new(1.0, 0.0, 0.0, 1.0)); // red at index 0
+///     changes.set_many([(1, Vec4::Y), (2, Vec4::Z)]); // green, blue
+/// }
+/// ```
 #[derive(Resource)]
 pub struct ArrayBufferChanges<Tag> {
     pub(crate) changes: Vec<(usize, Vec<u8>)>,

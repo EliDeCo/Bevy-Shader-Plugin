@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 description = "A Bevy plugin for streamlining fragment shader development."
+repository = "https://github.com/EliDeCo/Bevy-Shader-Plugin"
 
 [lib]
 name = "bevy_fragment_shader_plugin"
