@@ -6,7 +6,7 @@ license = "MIT"
 description = "A Bevy plugin for streamlining fragment shader development."
 repository = "https://github.com/EliDeCo/Bevy-Shader-Plugin"
 readme = "README.md"
-keywords = ["bevy", "shader", "fragment shader", "plugin", "wgpu"]
+keywords = ["bevy", "shader", "plugin", "wgpu"]
 categories = ["game-development", "graphics", "rendering"]
 
 [lib]
