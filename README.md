@@ -15,11 +15,6 @@ commands.spawn((Camera3d::default(), Msaa::Off));
 
 ## Setup
 
-```toml
-[dependencies]
-bevy_fragment_shader = { path = "..." }
-```
-
 Import everything you need in two lines:
 
 ```rust
