@@ -1,15 +1,15 @@
-# bevy_fragment_shader
+# bevy_fragment_shader_plugin
 
 A Bevy plugin for rendering fullscreen fragment shaders. Handles render graph wiring, pipeline creation, and buffer management.
 
-The plugin is not compatible with MSAA, make sure to disable it on all cameras
+The plugin is not compatible with MSAA, make sure to disable it on all cameras:
 ```rust
 commands.spawn((Camera3d::default(), Msaa::Off));
 ```
 
 ## Bevy compatibility
 
-| `bevy_fragment_shader` | Bevy |
+| `bevy-fragment-shader-plugin` | Bevy |
 |---|---|
 | 0.1 | 0.18 |
 
@@ -19,7 +19,7 @@ Import everything you need in two lines:
 
 ```rust
 use bevy::prelude::*;
-use bevy_fragment_shader::prelude::*;
+use bevy_fragment_shader_plugin::prelude::*;
 ```
 
 ## Quick start
@@ -47,7 +47,7 @@ App::new()
     // ...
 ```
 
-Any changes to the MyUniform resource will be reflected in the associated buffer on the next frame.
+Any changes to the `MyUniform` resource will be reflected in the associated buffer on the next frame.
 
 ### 3. Write the shader
 
@@ -62,7 +62,7 @@ fn frag_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
 }
 ```
 
-See [`examples/simple_shader.rs`](examples/simple_shader.rs) for the complete setup.
+See [`examples/solar_system.rs`](examples/solar_system.rs) for a complete example combining uniform, storage, and array buffers.
 
 ---
 
@@ -92,35 +92,30 @@ app.register_storage_buffer::<Red>(1, 0, false)
    .register_storage_buffer::<Blue>(1, 2, false);
 ```
 
-See [`examples/storage_shader.rs`](examples/storage_shader.rs).
-
 ### Fixed-size array buffer
 
-For fixed length arrays that benefit for per element updates (rather than full resend each frame), use the register_array_buffer function
+For fixed-length arrays that benefit from per-element updates (rather than a full resend each frame), use `register_array_buffer`:
 
 ```rust
 struct Colors;
-//                          <Name, Type, Capacity>
+//                          <Tag, Type, Capacity>
 app.register_array_buffer::<Colors, Vec4, 64>(1, 0, false);
 ```
 
-Update elements each frame via `ArrayBufferChanges<Tag>` and the `set`,`set_many`, and `set_all` functions, supplying the index to change and the value to assign for each. Only changed elements are uploaded, batched into contiguous `write_buffer` runs:
+Update elements each frame via `ArrayBufferChanges<Tag>` using `set`, `set_many`, or `set_all`. Only changed elements are uploaded, batched into contiguous `write_buffer` runs:
 
 ```rust
 fn animate(mut changes: ResMut<ArrayBufferChanges<Colors>>, time: Res<Time>) {
-    changes.set(0, Vec4::splat(time.elapsed_secs().sin()));
-    changes.set_many([(1, Vec4::ONE), (2, Vec4::ZERO)]);
+    changes.set(0, Vec4::splat(time.elapsed_secs().sin())); // single element
+    changes.set_many([(1, Vec4::ONE), (2, Vec4::ZERO)]);    // multiple elements
+    changes.set_all(Vec4::ZERO);                            // every element
 }
 ```
 
-See [`examples/array_shader.rs`](examples/array_shader.rs).
-
 ---
 
-## Running the examples
+## Running the example
 
 ```sh
-cargo run --example simple_shader   # animated gradient via uniform buffer
-cargo run --example storage_shader  # per-band RGB via storage buffers
-cargo run --example array_shader    # per-element color and brightness arrays
+cargo run --example solar_system   # orbital simulation using all three buffer types
 ```
