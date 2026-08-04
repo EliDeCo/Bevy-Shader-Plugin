@@ -458,14 +458,32 @@ macro_rules! fragment_layout {
 ///     .run();
 /// ```
 pub struct FullscreenFragmentPlugin {
-    /// Path to the fragment shader asset (e.g. `"shaders/effect.wgsl"`).
+    /// Path to the fragment shader asset (e.g. `"shaders/effect.wgsl"` or
+    /// `"shaders/effect.spv"`).
     pub shader_path: &'static str,
+    /// Fragment entry point name. `None` auto-detects the module's only one.
+    pub entry_point: Option<&'static str>,
 }
 
 impl FullscreenFragmentPlugin {
     /// Creates a new plugin that renders the shader at the given asset path.
     pub fn new(shader_path: &'static str) -> Self {
-        Self { shader_path }
+        Self {
+            shader_path,
+            entry_point: None,
+        }
+    }
+
+    /// Names the fragment entry point. Required when the shader module has more
+    /// than one.
+    ///
+    /// ```rust,ignore
+    /// FullscreenFragmentPlugin::new("shaders/my_shader.spv")
+    ///     .with_entry_point("main_fs")
+    /// ```
+    pub fn with_entry_point(mut self, entry_point: &'static str) -> Self {
+        self.entry_point = Some(entry_point);
+        self
     }
 }
 
@@ -477,6 +495,7 @@ impl Plugin for FullscreenFragmentPlugin {
 
         render_app.insert_resource(FullscreenPipelineConfig {
             shader_path: self.shader_path,
+            entry_point: self.entry_point,
         });
 
         render_app.init_resource::<FragmentExtraLayouts>();

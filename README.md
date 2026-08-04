@@ -7,11 +7,12 @@ The plugin is not compatible with MSAA, make sure to disable it on all cameras:
 commands.spawn((Camera3d::default(), Msaa::Off));
 ```
 
-## Bevy compatibility
+## Compatibility
 
-| `bevy-fragment-shader-plugin` | Bevy |
-|---|---|
-| 0.1 | 0.18 |
+| `bevy-fragment-shader-plugin` | Bevy | rust-gpu |
+|---|---|---|
+| 0.2 | 0.18 | 0.10.0-alpha.1 |
+| 0.1 | 0.18 | — |
 
 ## Setup
 
@@ -64,6 +65,8 @@ fn frag_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
 
 See [`examples/solar_system.rs`](examples/solar_system.rs) for a complete example combining uniform, storage, and array buffers.
 
+Shaders can also be written in Rust instead of WGSL — see [Using rust-gpu shaders](#using-rust-gpu-shaders).
+
 ---
 
 ## Buffer registration
@@ -114,8 +117,43 @@ fn animate(mut changes: ResMut<ArrayBufferChanges<Colors>>, time: Res<Time>) {
 
 ---
 
+## Using rust-gpu shaders
+
+Fragment shaders can be written in Rust with [rust-gpu](https://github.com/Rust-GPU/rust-gpu) instead of WGSL.
+
+Enable the `spirv` feature:
+
+```toml
+bevy-fragment-shader-plugin = { version = "0.2", features = ["spirv"] }
+```
+
+Point the plugin at a `.spv` and name the entry point:
+
+```rust
+FullscreenFragmentPlugin::new("shaders/my_shader.spv")
+    .with_entry_point("main_fs")
+```
+
+In the shader, `descriptor_set` is the group index and `binding` is the binding index, so they line up with the registration functions above:
+
+```rust
+#[spirv(fragment)]
+pub fn main_fs(
+    #[spirv(uniform, descriptor_set = 0, binding = 0)] u: &FrameUniform,
+    output: &mut Vec4,
+) { /* ... */ }
+```
+
+Not supported on web — leave the feature off for wasm builds.
+
+See [solar-system-rustgpu](https://github.com/EliDeCo/solar-system-rustgpu) for a complete project: shader source, build setup, and buffer layout rules.
+
+---
+
 ## Running the example
 
 ```sh
 cargo run --example solar_system   # orbital simulation using all three buffer types
 ```
+
+For the same example with its shader written in Rust rather than WGSL, see [solar-system-rustgpu](https://github.com/EliDeCo/solar-system-rustgpu).

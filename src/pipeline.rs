@@ -14,10 +14,12 @@ use crate::{
     auto_buffer::{AutoBufferCompiledLayouts, AutoBufferKind, AutoBufferLayouts},
 };
 
-/// Inserted during `Plugin::build` so `init_pipeline` can read the shader path.
+/// Inserted during `Plugin::build` so `init_pipeline` can read the shader path
+/// and entry point.
 #[derive(Resource)]
 pub struct FullscreenPipelineConfig {
     pub shader_path: &'static str,
+    pub entry_point: Option<&'static str>,
 }
 
 /// Render-world resource created by `init_pipeline`.
@@ -88,6 +90,7 @@ pub(crate) fn init_pipeline(
         vertex: vertex_state,
         fragment: Some(FragmentState {
             shader,
+            entry_point: config.entry_point.map(Into::into),
             targets: vec![Some(ColorTargetState {
                 format: TextureFormat::bevy_default(),
                 blend: Some(BlendState::ALPHA_BLENDING),

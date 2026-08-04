@@ -1,6 +1,6 @@
 [package]
 name = "bevy-fragment-shader-plugin"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 license = "MIT"
 description = "A Bevy plugin for streamlining fragment shader development."
@@ -11,6 +11,12 @@ categories = ["game-development", "graphics", "rendering"]
 
 [lib]
 name = "bevy_fragment_shader_plugin"
+
+[features]
+default = []
+# Enables loading `.spv` fragment shaders (e.g. produced by rust-gpu).
+# Native-only: browsers accept WGSL exclusively, so this breaks wasm builds.
+spirv = ["bevy/shader_format_spirv"]
 
 [dependencies]
 bevy = { version = "0.18.0", default-features = false, features = [
