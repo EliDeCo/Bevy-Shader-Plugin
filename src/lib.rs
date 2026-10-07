@@ -203,7 +203,7 @@ impl RenderLabel for FullscreenShaderNode {
 // App extension trait
 // ---------------------------------------------------------------------------
 
-/// Extension methods on [`App`] for registering buffer bindings and manual bind groups.
+/// Extension methods on [`App`] for registering uniform, storage, and array buffers.
 pub trait FragmentAppExt {
     /// Register an auto-managed uniform buffer at `@group(group_index) @binding(binding_index)`.
     ///
@@ -439,8 +439,9 @@ macro_rules! fragment_layout {
 
 /// Bevy plugin that wires up a fullscreen fragment shader pipeline.
 ///
-/// Call [`register_uniform_buffer`](FragmentAppExt::register_uniform_buffer) and
-/// [`register_storage_buffer`](FragmentAppExt::register_storage_buffer) on the
+/// Call [`register_uniform_buffer`](FragmentAppExt::register_uniform_buffer),
+/// [`register_storage_buffer`](FragmentAppExt::register_storage_buffer), and
+/// [`register_array_buffer`](FragmentAppExt::register_array_buffer) on the
 /// [`App`] to bind data to your shader.
 ///
 /// This plugin is not compatible with MSAA. Disable MSAA on all cameras.

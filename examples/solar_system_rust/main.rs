@@ -1,7 +1,13 @@
+//! Solar system rendered by a fragment shader written in Rust with rust-gpu.
+//! The prebuilt shader is committed at `assets/shaders/solar_system_rust.spv`.
+//! To rebuild it after editing the shader: `cd examples/solar_system_rust/shader-build && cargo build`.
+
 use bevy::prelude::*;
 use bevy_fragment_shader_plugin::prelude::*;
 
-const SHADER_PATH: &str = "shaders/solar_system.wgsl";
+const SHADER_PATH: &str = "shaders/solar_system_rust.spv";
+const ENTRY_POINT: &str = "main_fs";
+
 const N: usize = 8;
 
 // Tag type for the per-planet color array buffer.
@@ -42,7 +48,7 @@ impl Default for OrbitalState {
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(FullscreenFragmentPlugin::new(SHADER_PATH))
+        .add_plugins(FullscreenFragmentPlugin::new(SHADER_PATH).with_entry_point(ENTRY_POINT))
         // Uniform buffer — frame-level resolution
         .register_uniform_buffer::<FrameUniform>(0, 0)
         .init_resource::<FrameUniform>()
@@ -52,7 +58,6 @@ fn main() {
         // Array buffer — per-planet colors; only updated when a planet completes an orbit
         .register_array_buffer::<PlanetColors, Vec4, N>(2, 0, false)
         .init_resource::<OrbitalState>()
-
         .add_systems(Startup, setup)
         .add_systems(Update, (update_resolution, update_planets))
         .run();
@@ -88,7 +93,6 @@ fn update_planets(
         // Orbital radii spread evenly from 0.10 to 0.40 (UV units, 0..1 range).
         let r = 0.10 + 0.30 * (i as f32 / (N - 1) as f32);
         // Kepler-like angular speed: inner planets orbit faster (ω ∝ r^-1.5).
-        // With this constant, the innermost planet takes ~10 s and outermost ~80 s.
         let speed = 0.02 / r.powf(1.5);
         let prev = orbital.angles[i];
         orbital.angles[i] += speed * dt;

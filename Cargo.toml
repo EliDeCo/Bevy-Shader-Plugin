@@ -19,10 +19,11 @@ default = []
 spirv = ["bevy/shader_format_spirv"]
 
 [dependencies]
-bevy = { version = "0.18.0", default-features = false, features = [
-    "bevy_asset",
-    "bevy_core_pipeline",
-    "bevy_render",
-] }
+bevy = "0.18.0"
 encase = "0.12"
 wgpu = "27"
+
+# Lets `cargo run --example solar_system_rust` load its `.spv` without `--features spirv`.
+# Dev-dependency features only apply to examples/tests, not to users of the crate.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+bevy = { version = "0.18.0", features = ["shader_format_spirv"] }

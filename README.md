@@ -2,7 +2,7 @@
 
 A Bevy plugin for rendering fullscreen fragment shaders. Handles render graph wiring, pipeline creation, and buffer management.
 
-The plugin is not compatible with MSAA, make sure to disable it on all cameras:
+The plugin renders through Bevy's 3D pipeline, so it needs a `Camera3d`. It is not compatible with MSAA, make sure to disable it on all cameras:
 ```rust
 commands.spawn((Camera3d::default(), Msaa::Off));
 ```
@@ -73,6 +73,10 @@ Shaders can also be written in Rust instead of WGSL — see [Using rust-gpu shad
 
 All three methods are on the `FragmentAppExt` trait (included in the prelude). The `group_index` and `binding_index` arguments map directly to `@group(n) @binding(n)` in WGSL.
 
+- Call them after adding `DefaultPlugins`.
+- Group indices must start at 0 with no gaps (e.g. 0, 1, 2 — not 1, 2 or 0, 2).
+- WebGPU only guarantees 4 bind groups per pipeline, counting registered groups and manual extra groups together. Prefer putting several bindings in one group (different `binding_index` values under the same `group_index`) over giving each buffer its own group. Native backends usually allow more, but browsers and some mobile GPUs enforce the limit.
+
 ### Uniform buffer
 
 ```rust
@@ -115,6 +119,8 @@ fn animate(mut changes: ResMut<ArrayBufferChanges<Colors>>, time: Res<Time>) {
 }
 ```
 
+Values must be the `Type` given at registration (`Vec4` above). This isn't checked.
+
 ---
 
 ## Using rust-gpu shaders
@@ -127,7 +133,7 @@ Enable the `spirv` feature:
 bevy-fragment-shader-plugin = { version = "0.2", features = ["spirv"] }
 ```
 
-Point the plugin at a `.spv` and name the entry point:
+Point the plugin at a `.spv`. Naming the entry point is only required if the module has more than one:
 
 ```rust
 FullscreenFragmentPlugin::new("shaders/my_shader.spv")
@@ -146,14 +152,30 @@ pub fn main_fs(
 
 Not supported on web — leave the feature off for wasm builds.
 
-See [solar-system-rustgpu](https://github.com/EliDeCo/solar-system-rustgpu) for a complete project: shader source, build setup, and buffer layout rules.
+### Buffer layout
+
+Stick to `Vec2`, `Vec4`, `f32` and arrays of them. Avoid `Vec3`. Keep arrays out of uniform buffers unless the element is 16 bytes — use a storage buffer instead.
+
+### Building the shader
+
+See [`examples/solar_system_rust/`](examples/solar_system_rust/) for a complete project. The compiled shader is committed at `assets/shaders/solar_system_rust.spv`, so the example runs on stable. Rebuilding it after editing the shader needs `nightly-2026-05-22` with the `rust-src`, `rustc-dev` and `llvm-tools` components:
+
+```sh
+cd examples/solar_system_rust/shader-build
+cargo build   # writes assets/shaders/solar_system_rust.spv
+```
+
+The first build takes a few minutes, later ones a few seconds.
+
+Keep the shader crate inside `shader-build/`. As a sibling it builds with the wrong toolchain and fails with `the -Z flag is only accepted on the nightly channel`.
+
+`WARN naga::front::spv: Unknown decoration Block` on startup is harmless.
 
 ---
 
-## Running the example
+## Running the examples
 
 ```sh
-cargo run --example solar_system   # orbital simulation using all three buffer types
+cargo run --example solar_system        # orbital simulation using all three buffer types
+cargo run --example solar_system_rust   # the same, with the shader written in Rust (native only)
 ```
-
-For the same example with its shader written in Rust rather than WGSL, see [solar-system-rustgpu](https://github.com/EliDeCo/solar-system-rustgpu).

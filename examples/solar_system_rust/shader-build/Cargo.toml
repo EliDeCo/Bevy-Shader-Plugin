@@ -1,0 +1,16 @@
+[package]
+name = "shader-build"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[build-dependencies]
+spirv-builder = { git = "https://github.com/Rust-GPU/rust-gpu.git", rev = "63d5a41422010cd3f732b587b9dcd1d1a2b42de7", version = "0.10.0-alpha.1" }
+
+[profile.release.build-override]
+opt-level = 3
+codegen-units = 16
+[profile.dev.build-override]
+opt-level = 3
+
+[workspace]

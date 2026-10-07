@@ -47,7 +47,7 @@ pub(crate) fn init_pipeline(
     let keys: Vec<u32> = auto_buffer_layouts.0.keys().cloned().collect();
     debug_assert!(
         keys.windows(2).all(|w| w[1] == w[0] + 1),
-        "register_uniform_buffer/register_storage_buffer group indices must be contiguous (no gaps)"
+        "register_uniform_buffer/register_storage_buffer/register_array_buffer group indices must be contiguous (no gaps)"
     );
 
     // Build one BindGroupLayoutDescriptor per auto-buffer group.

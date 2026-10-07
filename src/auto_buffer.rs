@@ -20,8 +20,9 @@ pub enum AutoBufferKind {
 
 /// (group → binding → kind) for all auto-managed buffers.
 ///
-/// Populated eagerly at app-build time by [`register_uniform_buffer`](crate::FragmentAppExt::register_uniform_buffer)
-/// and [`register_storage_buffer`](crate::FragmentAppExt::register_storage_buffer).
+/// Populated eagerly at app-build time by [`register_uniform_buffer`](crate::FragmentAppExt::register_uniform_buffer),
+/// [`register_storage_buffer`](crate::FragmentAppExt::register_storage_buffer), and
+/// [`register_array_buffer`](crate::FragmentAppExt::register_array_buffer).
 /// Read by `init_pipeline` at startup to compile per-group layouts.
 #[derive(Resource, Default)]
 pub struct AutoBufferLayouts(pub BTreeMap<u32, BTreeMap<u32, AutoBufferKind>>);

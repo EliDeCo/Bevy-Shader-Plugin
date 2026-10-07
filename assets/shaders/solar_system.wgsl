@@ -1,4 +1,4 @@
-// Solar system — demonstrates all three buffer types from bevy_fragment_shader:
+// Solar system — demonstrates all three buffer types from bevy_fragment_shader_plugin:
 //   group(0) uniform:  resolution (no time; all motion is computed on the CPU)
 //   group(1) storage:  planet UV positions, fully re-uploaded every frame
 //   group(2) array:    per-planet RGBA colors, updated only when a planet completes an orbit
