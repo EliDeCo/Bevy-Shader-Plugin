@@ -347,11 +347,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "bevy-fragment-shader-plugin"
-version = "0.2.0"
+name = "bevy-shader-plugin"
+version = "0.3.0"
 dependencies = [
  "bevy",
  "encase",
+ "naga",
  "wgpu",
 ]
 

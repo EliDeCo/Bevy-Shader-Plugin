@@ -1,27 +1,31 @@
 [package]
-name = "bevy-fragment-shader-plugin"
-version = "0.2.0"
+name = "bevy-shader-plugin"
+version = "0.3.0"
 edition = "2024"
 license = "MIT"
-description = "A Bevy plugin for streamlining fragment shader development."
+description = "A Bevy plugin for streamlining fullscreen fragment and compute shader development."
 repository = "https://github.com/EliDeCo/Bevy-Shader-Plugin"
 readme = "README.md"
-keywords = ["bevy", "shader", "plugin", "wgpu"]
+keywords = ["bevy", "shader", "compute", "plugin", "wgpu"]
 categories = ["game-development", "graphics", "rendering"]
 
 [lib]
-name = "bevy_fragment_shader_plugin"
+name = "bevy_shader_plugin"
 
 [features]
 default = []
 # Enables loading `.spv` fragment shaders (e.g. produced by rust-gpu).
 # Native-only: browsers accept WGSL exclusively, so this breaks wasm builds.
+# Compute workgroup-size reflection is WGSL-only for now; supporting SPIR-V there
+# will add "naga/spv-in" to this feature.
 spirv = ["bevy/shader_format_spirv"]
 
 [dependencies]
 bevy = "0.18.0"
 encase = "0.12"
 wgpu = "27"
+# Reads `@workgroup_size` from compute shaders. Must match the naga version wgpu uses.
+naga = { version = "27", features = ["wgsl-in"] }
 
 # Lets `cargo run --example solar_system_rust` load its `.spv` without `--features spirv`.
 # Dev-dependency features only apply to examples/tests, not to users of the crate.

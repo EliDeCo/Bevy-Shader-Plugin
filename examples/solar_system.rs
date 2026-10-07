@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_fragment_shader_plugin::prelude::*;
+use bevy_shader_plugin::prelude::*;
 
 const SHADER_PATH: &str = "shaders/solar_system.wgsl";
 const N: usize = 8;
@@ -18,6 +18,14 @@ struct FrameUniform {
 #[derive(Resource, ShaderType, Clone, Default)]
 struct PlanetPositions {
     positions: [Vec2; N],
+}
+
+// group(1) binding(1) — average planet position, written by the GPU (the
+// `average_positions` compute pass) and read back to the CPU every frame. The CPU never
+// changes this resource after startup, so the GPU's writes are never overwritten.
+#[derive(Resource, ShaderType, Clone, Default)]
+struct AveragePosition {
+    value: Vec2,
 }
 
 // CPU-only resource: tracks each planet's current orbital angle and how many
@@ -41,20 +49,36 @@ impl Default for OrbitalState {
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugins(FullscreenFragmentPlugin::new(SHADER_PATH))
+        // Half of Bevy's default 1280x720.
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                resolution: (640, 360).into(),
+                ..default()
+            }),
+            ..default()
+        }))
+        .add_plugins((
+            FullscreenFragmentPlugin::new(SHADER_PATH),
+            // A single thread averages the 8 planet positions each frame.
+            ComputeShaderPlugin::new(SHADER_PATH)
+                .pass("average_positions", Workgroups::exact(UVec3::ONE)),
+        ))
         // Uniform buffer — frame-level resolution
         .register_uniform_buffer::<FrameUniform>(0, 0)
         .init_resource::<FrameUniform>()
         // Storage buffer — all planet positions, fully re-uploaded every frame
         .register_storage_buffer::<PlanetPositions>(1, 0, false)
         .init_resource::<PlanetPositions>()
+        // Read-write storage buffer — filled by the GPU, read back by the CPU every frame
+        .register_storage_buffer::<AveragePosition>(1, 1, true)
+        .init_resource::<AveragePosition>()
+        .read_back_storage_buffer::<AveragePosition>(ReadbackMode::EveryFrame)
         // Array buffer — per-planet colors; only updated when a planet completes an orbit
         .register_array_buffer::<PlanetColors, Vec4, N>(2, 0, false)
         .init_resource::<OrbitalState>()
 
         .add_systems(Startup, setup)
-        .add_systems(Update, (update_resolution, update_planets))
+        .add_systems(Update, (update_resolution, update_planets, print_average))
         .run();
 }
 
@@ -101,6 +125,20 @@ fn update_planets(
         let a = orbital.angles[i];
         positions.positions[i] = Vec2::new(0.5 + r * a.cos(), 0.5 + r * a.sin());
     }
+}
+
+// Logs the GPU-computed average each time a new readback arrives (about once a frame).
+fn print_average(readback: Res<StorageReadback<AveragePosition>>) {
+    if !readback.is_changed() {
+        return;
+    }
+    let Some(average) = readback.latest() else {
+        return;
+    };
+    info!(
+        "average planet position ({:.3}, {:.3})",
+        average.value.x, average.value.y
+    );
 }
 
 fn planet_color(planet_idx: usize, orbit_count: u32) -> Vec4 {

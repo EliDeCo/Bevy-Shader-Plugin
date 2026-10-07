@@ -1,15 +1,22 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::{
+    app::SubApp,
     prelude::*,
     render::{
-        Extract,
         render_resource::{
-            BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer,
+            BindGroup, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+            BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
+            PipelineCache, ShaderStages,
         },
         renderer::RenderDevice,
     },
 };
+
+/// Shader stages that can see auto-managed bindings. Every registered binding is shared
+/// by the fullscreen fragment pipeline and all compute pipelines.
+pub(crate) const AUTO_BINDING_VISIBILITY: ShaderStages =
+    ShaderStages::FRAGMENT.union(ShaderStages::COMPUTE);
 
 /// Whether a registered auto-managed buffer is a uniform or a storage buffer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,91 +27,195 @@ pub enum AutoBufferKind {
 
 /// (group → binding → kind) for all auto-managed buffers.
 ///
-/// Populated eagerly at app-build time by [`register_uniform_buffer`](crate::FragmentAppExt::register_uniform_buffer),
-/// [`register_storage_buffer`](crate::FragmentAppExt::register_storage_buffer), and
-/// [`register_array_buffer`](crate::FragmentAppExt::register_array_buffer).
-/// Read by `init_pipeline` at startup to compile per-group layouts.
+/// Populated eagerly at app-build time by the [`ShaderAppExt`](crate::ShaderAppExt)
+/// registration methods. Read at startup to compile per-group layouts.
 #[derive(Resource, Default)]
 pub struct AutoBufferLayouts(pub BTreeMap<u32, BTreeMap<u32, AutoBufferKind>>);
 
-/// Compiled [`BindGroupLayout`] per group, populated by `init_pipeline` at startup.
+/// Compiled [`BindGroupLayout`] per group, populated at startup.
 ///
-/// Used by [`finalize_buffer_bind_groups`] each frame to create bind groups.
+/// Used in [`ShaderSystems::FinalizeBindGroups`](crate::ShaderSystems::FinalizeBindGroups) to create bind groups.
 #[derive(Resource, Default)]
 pub struct AutoBufferCompiledLayouts(pub BTreeMap<u32, BindGroupLayout>);
 
-/// Per-frame staging: raw GPU buffer handles written by per-type prepare systems.
+/// Layout descriptors for every auto-managed group, in group order, populated at startup.
 ///
-/// Keyed by `(group_index, binding_index)`. Drained and cleared by
-/// [`finalize_buffer_bind_groups`] after bind groups are assembled.
+/// Both the fragment pipeline and the compute pipelines build their pipeline layouts
+/// from this list, so they agree on every group.
 #[derive(Resource, Default)]
-pub struct PendingBufferBindings(pub BTreeMap<(u32, u32), Buffer>);
+pub struct AutoBufferLayoutDescriptors(pub Vec<BindGroupLayoutDescriptor>);
 
 /// Assembled bind groups for all auto-managed buffers, keyed by WGSL group index.
 ///
-/// Written by [`finalize_buffer_bind_groups`] each frame. Read by [`FullscreenNode`](crate::FullscreenNode).
+/// Rebuilt in [`ShaderSystems::FinalizeBindGroups`](crate::ShaderSystems::FinalizeBindGroups) only when a binding in the group changes.
+/// Read by [`FullscreenNode`](crate::FullscreenNode) and the compute node.
 #[derive(Resource, Default)]
 pub struct AutoBufferBindGroups(pub BTreeMap<u32, BindGroup>);
 
-/// Extraction system: copies `U` from the main world into the render world each frame.
-pub(crate) fn extract_buffer<U: Resource + Clone>(
-    mut commands: Commands,
-    resource: Extract<Option<Res<U>>>,
-) {
-    if let Some(r) = resource.as_deref() {
-        commands.insert_resource(r.clone());
+/// A GPU resource bound at one `(group, binding)` slot.
+#[derive(Clone)]
+pub enum BoundResource {
+    Buffer(Buffer),
+    // Storage textures will add a `TextureView` variant here.
+}
+
+impl BoundResource {
+    fn binding(&self) -> BindingResource<'_> {
+        match self {
+            BoundResource::Buffer(buffer) => buffer.as_entire_binding(),
+        }
     }
 }
 
-/// Assembles one [`BindGroup`] per registered group from the per-type buffer handles
-/// stashed in [`PendingBufferBindings`]. Runs after all `PrepareBindGroups` systems.
-pub(crate) fn finalize_buffer_bind_groups(
+/// Persistent `(group, binding)` → GPU resource table for all auto-managed bindings.
+///
+/// Each registered buffer records its GPU handle here every frame. A group is only marked
+/// dirty (and its bind group rebuilt) when one of its handles actually changes, e.g. the
+/// first frame or after a buffer is reallocated to a larger size.
+#[derive(Resource, Default)]
+pub struct BindingTable {
+    entries: BTreeMap<(u32, u32), BoundResource>,
+    dirty_groups: BTreeSet<u32>,
+}
+
+impl BindingTable {
+    /// Record `buffer` at `(group, binding)`. Does nothing if that exact buffer is
+    /// already recorded there.
+    pub fn set_buffer(&mut self, group: u32, binding: u32, buffer: &Buffer) {
+        let unchanged = matches!(
+            self.entries.get(&(group, binding)),
+            Some(BoundResource::Buffer(existing)) if existing.id() == buffer.id()
+        );
+        if !unchanged {
+            self.entries
+                .insert((group, binding), BoundResource::Buffer(buffer.clone()));
+            self.dirty_groups.insert(group);
+        }
+    }
+}
+
+/// Initialise all binding resources in the render world. Idempotent.
+pub(crate) fn init_resources(render_app: &mut SubApp) {
+    render_app.init_resource::<AutoBufferLayouts>();
+    render_app.init_resource::<AutoBufferCompiledLayouts>();
+    render_app.init_resource::<AutoBufferLayoutDescriptors>();
+    render_app.init_resource::<AutoBufferBindGroups>();
+    render_app.init_resource::<BindingTable>();
+}
+
+/// Record that `(group_index, binding_index)` holds a buffer of `kind`.
+pub(crate) fn register_binding(
+    render_app: &mut SubApp,
+    group_index: u32,
+    binding_index: u32,
+    kind: AutoBufferKind,
+) {
+    init_resources(render_app);
+    render_app
+        .world_mut()
+        .resource_mut::<AutoBufferLayouts>()
+        .0
+        .entry(group_index)
+        .or_default()
+        .insert(binding_index, kind);
+}
+
+/// `RenderStartup` system. Builds one bind group layout per registered group.
+pub(crate) fn compile_layouts(
+    pipeline_cache: Res<PipelineCache>,
+    auto_buffer_layouts: Res<AutoBufferLayouts>,
+    mut compiled_layouts: ResMut<AutoBufferCompiledLayouts>,
+    mut descriptors: ResMut<AutoBufferLayoutDescriptors>,
+) {
+    // Validate: registered group indices must be contiguous (no gaps).
+    let keys: Vec<u32> = auto_buffer_layouts.0.keys().cloned().collect();
+    debug_assert!(
+        keys.windows(2).all(|w| w[1] == w[0] + 1),
+        "register_uniform_buffer/register_storage_buffer/register_array_buffer/register_gpu_buffer group indices must be contiguous (no gaps)"
+    );
+
+    for (&group_index, binding_map) in auto_buffer_layouts.0.iter() {
+        let entries: Vec<BindGroupLayoutEntry> = binding_map
+            .iter()
+            .map(|(&binding, &kind)| BindGroupLayoutEntry {
+                binding,
+                visibility: AUTO_BINDING_VISIBILITY,
+                ty: match kind {
+                    AutoBufferKind::Uniform => BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    AutoBufferKind::Storage { read_only } => BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                },
+                count: None,
+            })
+            .collect();
+        let desc = BindGroupLayoutDescriptor::new("auto_buffer_layout", &entries);
+        compiled_layouts
+            .0
+            .insert(group_index, pipeline_cache.get_bind_group_layout(&desc));
+        descriptors.0.push(desc);
+    }
+}
+
+/// Rebuilds the bind group of every dirty group whose registered bindings are all present.
+/// Groups that are still missing a binding stay dirty and are retried next frame.
+pub(crate) fn finalize_bind_groups(
     mut auto_bind_groups: ResMut<AutoBufferBindGroups>,
-    mut pending: ResMut<PendingBufferBindings>,
+    mut table: ResMut<BindingTable>,
     compiled_layouts: Res<AutoBufferCompiledLayouts>,
     auto_layouts: Res<AutoBufferLayouts>,
     render_device: Res<RenderDevice>,
 ) {
-    // Take all pending entries (leaves pending.0 empty for next frame).
-    let taken = std::mem::take(&mut pending.0);
-
-    // Group by group_index.
-    let mut by_group: BTreeMap<u32, BTreeMap<u32, Buffer>> = BTreeMap::new();
-    for ((group, binding), buffer) in taken {
-        by_group.entry(group).or_default().insert(binding, buffer);
+    if table.dirty_groups.is_empty() {
+        return;
     }
+    let BindingTable {
+        entries,
+        dirty_groups,
+    } = &mut *table;
 
-    for (group_index, group_buffers) in by_group {
-        // Skip if any registered binding for this group is missing.
-        let Some(expected) = auto_layouts.0.get(&group_index) else {
-            continue;
+    dirty_groups.retain(|&group_index| {
+        let (Some(expected), Some(layout)) = (
+            auto_layouts.0.get(&group_index),
+            compiled_layouts.0.get(&group_index),
+        ) else {
+            return true;
         };
-        if !expected.keys().all(|b| group_buffers.contains_key(b)) {
-            continue;
-        }
-
-        let Some(layout) = compiled_layouts.0.get(&group_index) else {
-            continue;
-        };
-
-        let mut sorted: Vec<(u32, Buffer)> = group_buffers.into_iter().collect();
-        sorted.sort_by_key(|(b, _)| *b);
-        let entries: Vec<BindGroupEntry> = sorted
-            .iter()
-            .map(|(binding, buf)| BindGroupEntry {
-                binding: *binding,
-                resource: buf.as_entire_binding(),
+        let Some(bind_entries) = expected
+            .keys()
+            .map(|&binding| {
+                entries
+                    .get(&(group_index, binding))
+                    .map(|resource| BindGroupEntry {
+                        binding,
+                        resource: resource.binding(),
+                    })
             })
-            .collect();
+            .collect::<Option<Vec<_>>>()
+        else {
+            return true;
+        };
 
-        let bind_group = render_device
-            .wgpu_device()
-            .create_bind_group(&BindGroupDescriptor {
-                label: Some("auto_buffer_bind_group"),
-                layout: layout,
-                entries: &entries,
-            });
+        let bind_group =
+            render_device.create_bind_group("auto_buffer_bind_group", layout, &bind_entries);
+        auto_bind_groups.0.insert(group_index, bind_group);
+        false
+    });
+}
 
-        auto_bind_groups.0.insert(group_index, bind_group.into());
-    }
+/// `true` once every registered group has a bind group.
+pub(crate) fn all_groups_bound(
+    layouts: &AutoBufferLayouts,
+    bind_groups: &AutoBufferBindGroups,
+) -> bool {
+    layouts
+        .0
+        .keys()
+        .all(|group| bind_groups.0.contains_key(group))
 }

@@ -1,105 +1,47 @@
 mod auto_array;
-mod auto_buffer;
+mod bindings;
+mod compute;
+mod cpu_buffer;
 mod extra_bind_group;
+mod gpu_buffer;
 mod node;
 mod pipeline;
+mod readback;
 
 use bevy::{
     core_pipeline::core_3d::graph::{Core3d, Node3d},
     prelude::*,
     render::{
-        ExtractSchedule, Render, RenderApp, RenderStartup, RenderSystems,
+        Render, RenderApp, RenderStartup, RenderSystems,
         render_graph::{RenderGraphExt, RenderLabel, ViewNodeRunner},
         render_resource::{
-            BindGroup, BindGroupLayoutDescriptor, BindGroupLayoutEntries, Buffer, ShaderStages,
-            ShaderType, StorageBuffer, UniformBuffer,
+            BindGroup, BindGroupLayoutDescriptor, BindGroupLayoutEntries, ShaderStages, ShaderType,
             binding_types::{storage_buffer_read_only_sized, storage_buffer_sized},
         },
-        renderer::{RenderDevice, RenderQueue},
     },
 };
-use encase::{ShaderSize, internal::WriteInto};
-use wgpu::{BufferUsages, util::BufferInitDescriptor};
-
-fn init_auto_buffer_resources(render_app: &mut bevy::app::SubApp) {
-    render_app.init_resource::<AutoBufferLayouts>();
-    render_app.init_resource::<AutoBufferBindGroups>();
-    render_app.init_resource::<AutoBufferCompiledLayouts>();
-    render_app.init_resource::<PendingBufferBindings>();
-}
-
-fn uniform_write<T: ShaderType + WriteInto + Default>(
-    value: T,
-    device: &RenderDevice,
-    queue: &RenderQueue,
-) -> Option<Buffer> {
-    let mut buf = UniformBuffer::default();
-    buf.set(value);
-    buf.write_buffer(device, queue);
-    buf.buffer().cloned()
-}
-
-fn storage_write<T: ShaderType + WriteInto + Default>(
-    value: T,
-    device: &RenderDevice,
-    queue: &RenderQueue,
-) -> Option<Buffer> {
-    let mut buf = StorageBuffer::default();
-    buf.set(value);
-    buf.write_buffer(device, queue);
-    buf.buffer().cloned()
-}
-
-fn register_buffer_impl<T, F>(
-    render_app: &mut bevy::app::SubApp,
-    group_index: u32,
-    binding_index: u32,
-    kind: AutoBufferKind,
-    write_fn: F,
-) where
-    T: Resource + Clone + Send + Sync + 'static,
-    F: Fn(T, &RenderDevice, &RenderQueue) -> Option<Buffer> + Send + Sync + 'static,
-{
-    init_auto_buffer_resources(render_app);
-
-    {
-        let world = render_app.world_mut();
-        let mut layouts = world.get_resource_mut::<AutoBufferLayouts>().unwrap();
-        layouts
-            .0
-            .entry(group_index)
-            .or_default()
-            .insert(binding_index, kind);
-    }
-
-    render_app.add_systems(ExtractSchedule, auto_buffer::extract_buffer::<T>);
-
-    render_app.add_systems(
-        Render,
-        (move |mut pending: ResMut<PendingBufferBindings>,
-               render_device: Res<RenderDevice>,
-               render_queue: Res<RenderQueue>,
-               resource: Option<Res<T>>| {
-            let Some(resource) = resource else { return };
-            if let Some(buf) = write_fn((*resource).clone(), &render_device, &render_queue) {
-                pending.0.insert((group_index, binding_index), buf);
-            }
-        })
-        .in_set(RenderSystems::PrepareBindGroups),
-    );
-}
+use encase::{
+    ShaderSize,
+    internal::{CreateFrom, WriteInto},
+};
 
 pub use auto_array::{ArrayBufferChanges, ArrayBufferState};
-pub use auto_buffer::{
-    AutoBufferBindGroups, AutoBufferCompiledLayouts, AutoBufferKind, AutoBufferLayouts,
-    PendingBufferBindings,
+pub use bindings::{
+    AutoBufferBindGroups, AutoBufferCompiledLayouts, AutoBufferKind, AutoBufferLayoutDescriptors,
+    AutoBufferLayouts, BindingTable, BoundResource,
 };
+pub use compute::{ComputePasses, ComputeShaderNode, ComputeShaderPlugin, Workgroups};
 pub use extra_bind_group::FragmentBindGroupBuilder;
+pub use gpu_buffer::GpuBuffer;
 pub use node::FullscreenNode;
 pub use pipeline::{FullscreenPipeline, FullscreenPipelineConfig};
+pub use readback::{GpuReadback, ReadbackCopyNode, ReadbackMode, StorageReadback};
 
 pub mod prelude {
-    pub use crate::{ArrayBufferChanges, FragmentAppExt, FullscreenFragmentPlugin};
+    pub use crate::{
+        ArrayBufferChanges, ComputePasses, ComputeShaderPlugin, FullscreenFragmentPlugin,
+        GpuBuffer, GpuReadback, ReadbackMode, ShaderAppExt, StorageReadback, Workgroups,
+    };
     pub use bevy::render::render_resource::ShaderType;
     pub use bevy::window::PrimaryWindow;
 }
@@ -118,6 +60,21 @@ pub mod __private {
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
+
+/// System sets for the binding machinery shared by the fragment and compute plugins.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ShaderSystems {
+    /// Runs in `RenderStartup`. Compiles the bind group layouts of all registered buffers.
+    /// Pipelines are created after this set.
+    CompileLayouts,
+    /// Runs in `Render`, inside [`RenderSystems::PrepareBindGroups`]. Uploads changed
+    /// buffers and records their handles in the [`BindingTable`].
+    PrepareBindings,
+    /// Runs in `Render`, inside [`RenderSystems::PrepareBindGroups`], after
+    /// [`PrepareBindings`](Self::PrepareBindings). Rebuilds bind groups whose bindings
+    /// changed.
+    FinalizeBindGroups,
+}
 
 /// System set label for the pipeline initialisation system so users can order
 /// their static-resource init systems before it.
@@ -203,12 +160,18 @@ impl RenderLabel for FullscreenShaderNode {
 // App extension trait
 // ---------------------------------------------------------------------------
 
-/// Extension methods on [`App`] for registering uniform, storage, and array buffers.
-pub trait FragmentAppExt {
+/// Extension methods on [`App`] for registering buffers shared by the fullscreen
+/// fragment shader and the compute shader.
+///
+/// Every registered buffer is visible to both stages at the same `@group`/`@binding`.
+/// Declare each binding with the same access mode (`read` or `read_write`) in every
+/// shader that uses it — wgpu rejects a mismatch.
+pub trait ShaderAppExt {
     /// Register an auto-managed uniform buffer at `@group(group_index) @binding(binding_index)`.
     ///
     /// `U` must be inserted as a [`Resource`] in the main world. The library extracts
-    /// it to the render world and uploads it to a uniform buffer every frame.
+    /// it to the render world and uploads it to a persistent uniform buffer whenever
+    /// the resource changes.
     ///
     /// Multiple calls with the same `group_index` but different `binding_index` values
     /// pack several uniform bindings into one bind group.
@@ -230,11 +193,16 @@ pub trait FragmentAppExt {
     /// Register an auto-managed storage buffer at `@group(group_index) @binding(binding_index)`.
     ///
     /// `S` must be inserted as a [`Resource`] in the main world. The library extracts
-    /// it to the render world and uploads it to a storage buffer every frame.
+    /// it to the render world and uploads it to a persistent storage buffer whenever
+    /// the resource changes.
     ///
     /// Multiple calls with the same `group_index` but different `binding_index` values
     /// pack several storage bindings into one bind group.
     /// `read_write`: `false` → `var<storage, read>`, `true` → `var<storage, read_write>`.
+    ///
+    /// The CPU owns this buffer: shader writes persist until the resource next changes,
+    /// then the CPU upload replaces the whole buffer. For data the GPU owns, use
+    /// [`register_gpu_buffer`](Self::register_gpu_buffer).
     ///
     /// # Example
     ///
@@ -286,20 +254,104 @@ pub trait FragmentAppExt {
     where
         Tag: Send + Sync + 'static,
         T: ShaderSize + WriteInto + Default + Send + Sync + 'static;
+
+    /// Register a GPU-owned buffer of `len` elements at
+    /// `@group(group_index) @binding(binding_index)`.
+    ///
+    /// Maps to WGSL `var<storage, read_write> name: array<T>` (always `read_write`). The
+    /// buffer starts filled with `T::default()` and is never uploaded from the CPU again,
+    /// so shader writes persist across frames — use it for simulation state that compute
+    /// passes update. Its handle is available in the main world as [`GpuBuffer<Tag>`].
+    ///
+    /// `Tag` is a user-defined marker type naming the buffer, also used to size
+    /// dispatches with [`Workgroups::over`]:
+    ///
+    /// ```rust,ignore
+    /// #[derive(ShaderType, Clone, Copy, Default)]
+    /// struct Particle { pos: Vec2, vel: Vec2 }
+    /// struct Particles;
+    ///
+    /// app.register_gpu_buffer::<Particles, Particle>(1, 0, 1024);
+    /// // WGSL: @group(1) @binding(0) var<storage, read_write> particles: array<Particle>;
+    /// ```
+    fn register_gpu_buffer<Tag, T>(
+        &mut self,
+        group_index: u32,
+        binding_index: u32,
+        len: u32,
+    ) -> &mut Self
+    where
+        Tag: Send + Sync + 'static,
+        T: ShaderSize + WriteInto + Default + Send + Sync + 'static;
+
+    /// Enable reading the GPU buffer tagged `Tag` back to the CPU, decoded as `T` values
+    /// into the [`GpuReadback<Tag, T>`] resource. Call after
+    /// [`register_gpu_buffer`](Self::register_gpu_buffer), with the same `T`.
+    ///
+    /// With [`ReadbackMode::OnRequest`], call [`GpuReadback::request`] whenever you want a
+    /// copy. With [`ReadbackMode::EveryFrame`], the buffer is copied every frame. Results
+    /// arrive 1–3 frames after the copy is made.
+    ///
+    /// ```rust,ignore
+    /// app.register_gpu_buffer::<Particles, Particle>(1, 0, 1024)
+    ///    .read_back_gpu_buffer::<Particles, Particle>(ReadbackMode::OnRequest);
+    ///
+    /// fn request(readback: Res<GpuReadback<Particles, Particle>>) {
+    ///     readback.request();
+    /// }
+    ///
+    /// fn print(readback: Res<GpuReadback<Particles, Particle>>) {
+    ///     if !readback.is_changed() { return; }
+    ///     let Some(particles) = readback.latest() else { return };
+    ///     info!("{} particles", particles.len());
+    /// }
+    /// ```
+    fn read_back_gpu_buffer<Tag, T>(&mut self, mode: ReadbackMode) -> &mut Self
+    where
+        Tag: Send + Sync + 'static,
+        T: ShaderSize + CreateFrom + Send + Sync + 'static;
+
+    /// Enable reading the array buffer tagged `Tag` back to the CPU, decoded as `T` values
+    /// into the [`GpuReadback<Tag, T>`] resource. Call after
+    /// [`register_array_buffer`](Self::register_array_buffer), with the same `T`.
+    ///
+    /// Works exactly like [`read_back_gpu_buffer`](Self::read_back_gpu_buffer). Useful
+    /// when a shader writes to a `read_write` array buffer.
+    fn read_back_array_buffer<Tag, T>(&mut self, mode: ReadbackMode) -> &mut Self
+    where
+        Tag: Send + Sync + 'static,
+        T: ShaderSize + CreateFrom + Send + Sync + 'static;
+
+    /// Enable reading the storage buffer of resource type `S` back to the CPU, decoded as
+    /// an `S` into the [`StorageReadback<S>`] resource. Call after
+    /// [`register_storage_buffer`](Self::register_storage_buffer). If `S` is registered at
+    /// several bindings, the first storage registration is read.
+    ///
+    /// Useful when a shader writes to a `read_write` storage buffer. With
+    /// [`ReadbackMode::OnRequest`], call [`StorageReadback::request`] whenever you want a
+    /// copy. With [`ReadbackMode::EveryFrame`], the buffer is copied every frame.
+    ///
+    /// ```rust,ignore
+    /// app.register_storage_buffer::<Stats>(1, 0, true)
+    ///    .init_resource::<Stats>()
+    ///    .read_back_storage_buffer::<Stats>(ReadbackMode::EveryFrame);
+    ///
+    /// fn print(readback: Res<StorageReadback<Stats>>) {
+    ///     let Some(stats) = readback.latest() else { return };
+    ///     info!("{:?}", stats.total);
+    /// }
+    /// ```
+    fn read_back_storage_buffer<S>(&mut self, mode: ReadbackMode) -> &mut Self
+    where
+        S: ShaderType + WriteInto + CreateFrom + Default + Resource + Clone + Send + Sync + 'static;
 }
 
-impl FragmentAppExt for App {
+impl ShaderAppExt for App {
     fn register_uniform_buffer<U>(&mut self, group_index: u32, binding_index: u32) -> &mut Self
     where
         U: ShaderType + WriteInto + Default + Resource + Clone + Send + Sync + 'static,
     {
-        register_buffer_impl::<U, _>(
-            self.sub_app_mut(RenderApp),
-            group_index,
-            binding_index,
-            AutoBufferKind::Uniform,
-            uniform_write::<U>,
-        );
+        cpu_buffer::register::<U>(self, group_index, binding_index, AutoBufferKind::Uniform);
         self
     }
 
@@ -312,14 +364,13 @@ impl FragmentAppExt for App {
     where
         S: ShaderType + WriteInto + Default + Resource + Clone + Send + Sync + 'static,
     {
-        register_buffer_impl::<S, _>(
-            self.sub_app_mut(RenderApp),
+        cpu_buffer::register::<S>(
+            self,
             group_index,
             binding_index,
             AutoBufferKind::Storage {
                 read_only: !read_write,
             },
-            storage_write::<S>,
         );
         self
     }
@@ -334,83 +385,47 @@ impl FragmentAppExt for App {
         Tag: Send + Sync + 'static,
         T: ShaderSize + WriteInto + Default + Send + Sync + 'static,
     {
-        self.insert_resource(ArrayBufferChanges::<Tag> {
-            changes: Vec::new(),
-            len: N,
-            _marker: std::marker::PhantomData,
-        });
+        auto_array::register::<Tag, T, N>(self, group_index, binding_index, read_write);
+        self
+    }
 
-        let render_app = self.sub_app_mut(RenderApp);
+    fn register_gpu_buffer<Tag, T>(
+        &mut self,
+        group_index: u32,
+        binding_index: u32,
+        len: u32,
+    ) -> &mut Self
+    where
+        Tag: Send + Sync + 'static,
+        T: ShaderSize + WriteInto + Default + Send + Sync + 'static,
+    {
+        gpu_buffer::register::<Tag, T>(self, group_index, binding_index, len);
+        self
+    }
 
-        init_auto_buffer_resources(render_app);
+    fn read_back_gpu_buffer<Tag, T>(&mut self, mode: ReadbackMode) -> &mut Self
+    where
+        Tag: Send + Sync + 'static,
+        T: ShaderSize + CreateFrom + Send + Sync + 'static,
+    {
+        readback::register_gpu::<Tag, T>(self, mode);
+        self
+    }
 
-        {
-            let world = render_app.world_mut();
-            let mut layouts = world.get_resource_mut::<AutoBufferLayouts>().unwrap();
-            layouts.0.entry(group_index).or_default().insert(
-                binding_index,
-                AutoBufferKind::Storage {
-                    read_only: !read_write,
-                },
-            );
-        }
+    fn read_back_array_buffer<Tag, T>(&mut self, mode: ReadbackMode) -> &mut Self
+    where
+        Tag: Send + Sync + 'static,
+        T: ShaderSize + CreateFrom + Send + Sync + 'static,
+    {
+        readback::register_array::<Tag, T>(self, mode);
+        self
+    }
 
-        // RenderStartup: create the persistent GPU buffer pre-filled with T::default().
-        render_app.add_systems(
-            RenderStartup,
-            move |mut commands: Commands, render_device: Res<RenderDevice>| {
-                // [T; 1]::SHADER_SIZE equals the WGSL array element stride for any N.
-                let stride = <[T; 1] as ShaderSize>::SHADER_SIZE.get() as usize;
-                let el_size = T::SHADER_SIZE.get() as usize;
-
-                let default_val = T::default();
-                let mut el_buf = vec![0u8; el_size];
-                encase::StorageBuffer::new(&mut el_buf[..])
-                    .write(&default_val)
-                    .unwrap();
-
-                let mut bytes = vec![0u8; stride * N];
-                for i in 0..N {
-                    bytes[i * stride..i * stride + el_size].copy_from_slice(&el_buf);
-                }
-
-                let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-                    label: Some("array_buffer"),
-                    contents: &bytes,
-                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-                });
-
-                commands.insert_resource(ArrayBufferState::<Tag> {
-                    buffer,
-                    stride,
-                    _marker: std::marker::PhantomData,
-                });
-            },
-        );
-
-        render_app.add_systems(ExtractSchedule, auto_array::extract_array_changes::<Tag>);
-
-        render_app.add_systems(
-            Render,
-            (move |state: Option<Res<ArrayBufferState<Tag>>>,
-                   changes: Option<Res<ArrayBufferChanges<Tag>>>,
-                   render_queue: Res<RenderQueue>,
-                   mut pending: ResMut<PendingBufferBindings>| {
-                let (Some(state), Some(changes)) = (state, changes) else {
-                    return;
-                };
-                auto_array::apply_array_buffer_changes(
-                    &*state,
-                    &*changes,
-                    &render_queue,
-                    &mut pending,
-                    group_index,
-                    binding_index,
-                );
-            })
-            .in_set(RenderSystems::PrepareBindGroups),
-        );
-
+    fn read_back_storage_buffer<S>(&mut self, mode: ReadbackMode) -> &mut Self
+    where
+        S: ShaderType + WriteInto + CreateFrom + Default + Resource + Clone + Send + Sync + 'static,
+    {
+        readback::register_storage::<S>(self, mode);
         self
     }
 }
@@ -434,15 +449,53 @@ macro_rules! fragment_layout {
 }
 
 // ---------------------------------------------------------------------------
-// Plugin
+// Plugins
 // ---------------------------------------------------------------------------
+
+/// Binding machinery shared by [`FullscreenFragmentPlugin`] and [`ComputeShaderPlugin`]:
+/// layout compilation and bind group assembly for every registered buffer.
+struct ShaderCorePlugin;
+
+impl Plugin for ShaderCorePlugin {
+    fn build(&self, app: &mut App) {
+        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
+            return;
+        };
+
+        bindings::init_resources(render_app);
+
+        render_app
+            .configure_sets(
+                Render,
+                (
+                    ShaderSystems::PrepareBindings,
+                    ShaderSystems::FinalizeBindGroups,
+                )
+                    .chain()
+                    .in_set(RenderSystems::PrepareBindGroups),
+            )
+            .add_systems(
+                Render,
+                bindings::finalize_bind_groups.in_set(ShaderSystems::FinalizeBindGroups),
+            )
+            .add_systems(
+                RenderStartup,
+                bindings::compile_layouts.in_set(ShaderSystems::CompileLayouts),
+            );
+    }
+}
+
+/// Adds [`ShaderCorePlugin`] unless another plugin already did.
+fn add_core_plugin(app: &mut App) {
+    if !app.is_plugin_added::<ShaderCorePlugin>() {
+        app.add_plugins(ShaderCorePlugin);
+    }
+}
 
 /// Bevy plugin that wires up a fullscreen fragment shader pipeline.
 ///
-/// Call [`register_uniform_buffer`](FragmentAppExt::register_uniform_buffer),
-/// [`register_storage_buffer`](FragmentAppExt::register_storage_buffer), and
-/// [`register_array_buffer`](FragmentAppExt::register_array_buffer) on the
-/// [`App`] to bind data to your shader.
+/// Call the [`ShaderAppExt`] registration methods on the [`App`] to bind data to your
+/// shader.
 ///
 /// This plugin is not compatible with MSAA. Disable MSAA on all cameras.
 ///
@@ -490,6 +543,8 @@ impl FullscreenFragmentPlugin {
 
 impl Plugin for FullscreenFragmentPlugin {
     fn build(&self, app: &mut App) {
+        add_core_plugin(app);
+
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
@@ -501,17 +556,16 @@ impl Plugin for FullscreenFragmentPlugin {
 
         render_app.init_resource::<FragmentExtraLayouts>();
         render_app.init_resource::<FragmentExtraBindGroups>();
-        init_auto_buffer_resources(render_app);
 
-        render_app.add_systems(
-            Render,
-            auto_buffer::finalize_buffer_bind_groups.after(RenderSystems::PrepareBindGroups),
-        );
-
-        render_app.add_systems(
-            RenderStartup,
-            pipeline::init_pipeline.in_set(FragmentSystems::InitPipeline),
-        );
+        render_app
+            .configure_sets(
+                RenderStartup,
+                FragmentSystems::InitPipeline.after(ShaderSystems::CompileLayouts),
+            )
+            .add_systems(
+                RenderStartup,
+                pipeline::init_pipeline.in_set(FragmentSystems::InitPipeline),
+            );
 
         render_app
             .add_render_graph_node::<ViewNodeRunner<FullscreenNode>>(Core3d, FullscreenShaderNode)

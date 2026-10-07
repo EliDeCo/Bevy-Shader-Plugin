@@ -3,7 +3,7 @@
 //! To rebuild it after editing the shader: `cd examples/solar_system_rust/shader-build && cargo build`.
 
 use bevy::prelude::*;
-use bevy_fragment_shader_plugin::prelude::*;
+use bevy_shader_plugin::prelude::*;
 
 const SHADER_PATH: &str = "shaders/solar_system_rust.spv";
 const ENTRY_POINT: &str = "main_fs";

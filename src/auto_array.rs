@@ -2,12 +2,20 @@ use std::{collections::BTreeMap, marker::PhantomData};
 
 use bevy::{
     prelude::*,
-    render::{MainWorld, render_resource::Buffer, renderer::RenderQueue},
+    render::{
+        ExtractSchedule, MainWorld, Render, RenderApp, RenderStartup,
+        render_resource::{Buffer, BufferUsages},
+        renderer::{RenderDevice, RenderQueue},
+    },
 };
 use encase::ShaderSize;
 use encase::internal::WriteInto;
+use wgpu::util::BufferInitDescriptor;
 
-use crate::auto_buffer::PendingBufferBindings;
+use crate::{
+    ShaderSystems,
+    bindings::{AutoBufferKind, BindingTable, register_binding},
+};
 
 /// Main-world resource for queuing index-value changes to a fixed-size array buffer.
 ///
@@ -54,6 +62,93 @@ fn serialize_element<T: ShaderSize + WriteInto>(value: &T) -> Vec<u8> {
         .write(value)
         .unwrap();
     bytes
+}
+
+/// WGSL array element stride of `T` in bytes (element size plus alignment padding).
+pub(crate) fn array_stride<T: ShaderSize>() -> usize {
+    // [T; 1]::SHADER_SIZE equals the WGSL array element stride for any length.
+    <[T; 1] as ShaderSize>::SHADER_SIZE.get() as usize
+}
+
+/// Bytes of a WGSL `array<T, len>` with every element set to `T::default()`.
+pub(crate) fn default_filled_bytes<T: ShaderSize + WriteInto + Default>(len: usize) -> Vec<u8> {
+    let stride = array_stride::<T>();
+    let el_bytes = serialize_element(&T::default());
+    let mut bytes = vec![0u8; stride * len];
+    for i in 0..len {
+        bytes[i * stride..i * stride + el_bytes.len()].copy_from_slice(&el_bytes);
+    }
+    bytes
+}
+
+/// Register a fixed-size array buffer. See
+/// [`ShaderAppExt::register_array_buffer`](crate::ShaderAppExt::register_array_buffer).
+pub(crate) fn register<Tag, T, const N: usize>(
+    app: &mut App,
+    group_index: u32,
+    binding_index: u32,
+    read_write: bool,
+) where
+    Tag: Send + Sync + 'static,
+    T: ShaderSize + WriteInto + Default + Send + Sync + 'static,
+{
+    app.insert_resource(ArrayBufferChanges::<Tag> {
+        changes: Vec::new(),
+        len: N,
+        _marker: PhantomData,
+    });
+
+    let render_app = app.sub_app_mut(RenderApp);
+    register_binding(
+        render_app,
+        group_index,
+        binding_index,
+        AutoBufferKind::Storage {
+            read_only: !read_write,
+        },
+    );
+
+    // RenderStartup: create the persistent GPU buffer pre-filled with T::default().
+    render_app.add_systems(
+        RenderStartup,
+        |mut commands: Commands, render_device: Res<RenderDevice>| {
+            let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+                label: Some("array_buffer"),
+                contents: &default_filled_bytes::<T>(N),
+                // COPY_SRC lets a future GPU→CPU readback copy out of this buffer.
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
+            });
+
+            commands.insert_resource(ArrayBufferState::<Tag> {
+                buffer,
+                stride: array_stride::<T>(),
+                _marker: PhantomData,
+            });
+        },
+    );
+
+    render_app.add_systems(ExtractSchedule, extract_array_changes::<Tag>);
+
+    render_app.add_systems(
+        Render,
+        (move |state: Option<Res<ArrayBufferState<Tag>>>,
+               changes: Option<Res<ArrayBufferChanges<Tag>>>,
+               render_queue: Res<RenderQueue>,
+               mut table: ResMut<BindingTable>| {
+            let (Some(state), Some(changes)) = (state, changes) else {
+                return;
+            };
+            apply_array_buffer_changes(
+                &state,
+                &changes,
+                &render_queue,
+                &mut table,
+                group_index,
+                binding_index,
+            );
+        })
+        .in_set(ShaderSystems::PrepareBindings),
+    );
 }
 
 impl<Tag> ArrayBufferChanges<Tag> {
@@ -132,12 +227,12 @@ pub(crate) fn extract_array_changes<Tag: Send + Sync + 'static>(
 }
 
 /// Applies pending changes to the GPU buffer via contiguous-run `write_buffer` batching,
-/// then inserts the persistent buffer handle into `PendingBufferBindings`.
-pub(crate) fn apply_array_buffer_changes<Tag: Send + Sync + 'static>(
+/// then records the persistent buffer handle in the [`BindingTable`].
+fn apply_array_buffer_changes<Tag: Send + Sync + 'static>(
     state: &ArrayBufferState<Tag>,
     changes: &ArrayBufferChanges<Tag>,
     render_queue: &RenderQueue,
-    pending: &mut PendingBufferBindings,
+    table: &mut BindingTable,
     group_index: u32,
     binding_index: u32,
 ) {
@@ -182,7 +277,5 @@ pub(crate) fn apply_array_buffer_changes<Tag: Send + Sync + 'static>(
         render_queue.write_buffer(&state.buffer, offset, &bytes);
     }
 
-    pending
-        .0
-        .insert((group_index, binding_index), state.buffer.clone());
+    table.set_buffer(group_index, binding_index, &state.buffer);
 }

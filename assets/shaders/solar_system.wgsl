@@ -1,14 +1,21 @@
-// Solar system — demonstrates all three buffer types from bevy_fragment_shader_plugin:
-//   group(0) uniform:  resolution (no time; all motion is computed on the CPU)
-//   group(1) storage:  planet UV positions, fully re-uploaded every frame
-//   group(2) array:    per-planet RGBA colors, updated only when a planet completes an orbit
+// Solar system — demonstrates the CPU-side buffer types from bevy_shader_plugin:
+//   group(0) uniform:            resolution (no time; all motion is computed on the CPU)
+//   group(1) binding(0) storage: planet UV positions, fully re-uploaded every frame
+//   group(1) binding(1) storage: average planet position, written by the `average_positions`
+//                                compute pass and read back to the CPU every frame
+//   group(2) array:              per-planet RGBA colors, updated only when a planet completes an orbit
 
 struct FrameUniform {
     resolution: vec2<f32>,
 }
 
 @group(0) @binding(0) var<uniform> u: FrameUniform;
+struct AveragePosition {
+    value: vec2<f32>,
+}
+
 @group(1) @binding(0) var<storage, read> positions: array<vec2<f32>, 8>;
+@group(1) @binding(1) var<storage, read_write> average: AveragePosition;
 @group(2) @binding(0) var<storage, read> colors: array<vec4<f32>, 8>;
 
 const STAR_CENTER: vec2<f32> = vec2<f32>(0.5, 0.5);
@@ -28,6 +35,16 @@ fn star_field(pixel: vec2<f32>) -> f32 {
     let pos = vec2<f32>(hash(cell + vec2<f32>(7.3, 2.1)), hash(cell + vec2<f32>(3.7, 8.5)));
     let brightness = 0.5 + 0.5 * hash(cell + vec2<f32>(5.0, 5.0));
     return brightness * step(distance(local, pos), 0.06);
+}
+
+// One thread is plenty for 8 planets.
+@compute @workgroup_size(1)
+fn average_positions() {
+    var sum = vec2<f32>(0.0);
+    for (var i = 0u; i < 8u; i++) {
+        sum += positions[i];
+    }
+    average.value = sum / 8.0;
 }
 
 @fragment

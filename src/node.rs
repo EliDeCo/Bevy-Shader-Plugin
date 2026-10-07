@@ -10,7 +10,9 @@ use bevy::{
 };
 
 use crate::{
-    FragmentExtraBindGroups, auto_buffer::AutoBufferBindGroups, pipeline::FullscreenPipeline,
+    FragmentExtraBindGroups,
+    bindings::{AutoBufferBindGroups, AutoBufferLayouts, all_groups_bound},
+    pipeline::FullscreenPipeline,
 };
 
 /// The render graph node that executes the fullscreen fragment shader.
@@ -40,6 +42,17 @@ impl ViewNode for FullscreenNode {
         let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_res.pipeline_id) else {
             return Ok(());
         };
+        let (Some(layouts), Some(auto)) = (
+            world.get_resource::<AutoBufferLayouts>(),
+            world.get_resource::<AutoBufferBindGroups>(),
+        ) else {
+            return Ok(());
+        };
+        // Drawing with an unset group is a validation error, so wait until every
+        // registered group has its bind group.
+        if !all_groups_bound(layouts, auto) {
+            return Ok(());
+        }
 
         let mut render_pass = render_context.begin_tracked_render_pass(
             bevy::render::render_resource::RenderPassDescriptor {
@@ -51,14 +64,10 @@ impl ViewNode for FullscreenNode {
 
         render_pass.set_render_pipeline(pipeline);
 
-        let auto_count = if let Some(auto) = world.get_resource::<AutoBufferBindGroups>() {
-            for (group_index, bind_group) in auto.0.iter() {
-                render_pass.set_bind_group(*group_index as usize, bind_group, &[]);
-            }
-            auto.0.len()
-        } else {
-            0
-        };
+        for (group_index, bind_group) in auto.0.iter() {
+            render_pass.set_bind_group(*group_index as usize, bind_group, &[]);
+        }
+        let auto_count = auto.0.len();
 
         if let Some(extra) = world.get_resource::<FragmentExtraBindGroups>() {
             for (i, bind_group) in extra.0.iter().enumerate() {

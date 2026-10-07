@@ -3,16 +3,12 @@ use bevy::{
     core_pipeline::FullscreenShader,
     prelude::*,
     render::render_resource::{
-        BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState,
-        BufferBindingType, CachedRenderPipelineId, ColorTargetState, ColorWrites, FragmentState,
-        MultisampleState, PipelineCache, RenderPipelineDescriptor, ShaderStages, TextureFormat,
+        BindGroupLayout, BlendState, CachedRenderPipelineId, ColorTargetState, ColorWrites,
+        FragmentState, MultisampleState, PipelineCache, RenderPipelineDescriptor, TextureFormat,
     },
 };
 
-use crate::{
-    FragmentExtraLayouts,
-    auto_buffer::{AutoBufferCompiledLayouts, AutoBufferKind, AutoBufferLayouts},
-};
+use crate::{FragmentExtraLayouts, bindings::AutoBufferLayoutDescriptors};
 
 /// Inserted during `Plugin::build` so `init_pipeline` can read the shader path
 /// and entry point.
@@ -31,8 +27,8 @@ pub struct FullscreenPipeline {
     pub extra_layouts: Vec<BindGroupLayout>,
 }
 
-/// `RenderStartup` system. Builds bind group layouts for all registered auto-buffer
-/// groups and manual extra groups, then queues the render pipeline.
+/// `RenderStartup` system. Queues the render pipeline using the auto-buffer group layouts
+/// (compiled by the shared core) followed by the manual extra groups.
 pub(crate) fn init_pipeline(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -40,45 +36,9 @@ pub(crate) fn init_pipeline(
     pipeline_cache: Res<PipelineCache>,
     config: Res<FullscreenPipelineConfig>,
     extra_layouts: Res<FragmentExtraLayouts>,
-    auto_buffer_layouts: Res<AutoBufferLayouts>,
-    mut compiled_layouts: ResMut<AutoBufferCompiledLayouts>,
+    auto_buffer_descriptors: Res<AutoBufferLayoutDescriptors>,
 ) {
-    // Validate: registered group indices must be contiguous (no gaps).
-    let keys: Vec<u32> = auto_buffer_layouts.0.keys().cloned().collect();
-    debug_assert!(
-        keys.windows(2).all(|w| w[1] == w[0] + 1),
-        "register_uniform_buffer/register_storage_buffer/register_array_buffer group indices must be contiguous (no gaps)"
-    );
-
-    // Build one BindGroupLayoutDescriptor per auto-buffer group.
-    let mut all_layouts: Vec<BindGroupLayoutDescriptor> = Vec::new();
-    for (&group_index, binding_map) in auto_buffer_layouts.0.iter() {
-        let entries: Vec<BindGroupLayoutEntry> = binding_map
-            .iter()
-            .map(|(&binding, &kind)| BindGroupLayoutEntry {
-                binding,
-                visibility: ShaderStages::FRAGMENT,
-                ty: match kind {
-                    AutoBufferKind::Uniform => BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    AutoBufferKind::Storage { read_only } => BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                },
-                count: None,
-            })
-            .collect();
-        let desc = BindGroupLayoutDescriptor::new("auto_buffer_layout", &entries);
-        compiled_layouts
-            .0
-            .insert(group_index, pipeline_cache.get_bind_group_layout(&desc));
-        all_layouts.push(desc);
-    }
+    let mut all_layouts = auto_buffer_descriptors.0.clone();
     all_layouts.extend(extra_layouts.0.iter().cloned());
 
     let shader = asset_server.load(config.shader_path);
