@@ -9,11 +9,10 @@ mod pipeline;
 mod readback;
 
 use bevy::{
-    core_pipeline::core_3d::graph::{Core3d, Node3d},
+    core_pipeline::{Core3d, Core3dSystems},
     prelude::*,
     render::{
         Render, RenderApp, RenderStartup, RenderSystems,
-        render_graph::{RenderGraphExt, RenderLabel, ViewNodeRunner},
         render_resource::{
             BindGroup, BindGroupLayoutDescriptor, BindGroupLayoutEntries, ShaderStages, ShaderType,
             binding_types::{storage_buffer_read_only_sized, storage_buffer_sized},
@@ -30,12 +29,12 @@ pub use bindings::{
     AutoBufferBindGroups, AutoBufferCompiledLayouts, AutoBufferKind, AutoBufferLayoutDescriptors,
     AutoBufferLayouts, BindingTable, BoundResource,
 };
-pub use compute::{ComputePasses, ComputeShaderNode, ComputeShaderPlugin, Workgroups};
+pub use compute::{ComputePasses, ComputeShaderPlugin, Workgroups};
 pub use extra_bind_group::FragmentBindGroupBuilder;
 pub use gpu_buffer::GpuBuffer;
-pub use node::FullscreenNode;
+pub use node::fullscreen_pass;
 pub use pipeline::{FullscreenPipeline, FullscreenPipelineConfig};
-pub use readback::{GpuReadback, ReadbackCopyNode, ReadbackMode, StorageReadback};
+pub use readback::{GpuReadback, ReadbackMode, StorageReadback};
 
 pub mod prelude {
     pub use crate::{
@@ -146,14 +145,21 @@ impl FragmentExtraBindGroups {
     }
 }
 
-/// The render graph node label. Only one `FullscreenFragmentPlugin` instance
-/// is supported per app.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FullscreenShaderNode;
-impl RenderLabel for FullscreenShaderNode {
-    fn dyn_clone(&self) -> Box<dyn RenderLabel> {
-        Box::new(*self)
-    }
+/// System sets for the GPU passes this crate records, so your own render systems can be
+/// ordered around them.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ShaderPassSystems {
+    /// The [`ComputeShaderPlugin`] passes. Runs in the root
+    /// [`RenderGraph`] schedule, before any camera
+    /// renders.
+    Compute,
+    /// The [`FullscreenFragmentPlugin`] draw. Runs in each 3D camera's
+    /// [`Core3d`] schedule, after the prepass and before the main pass.
+    Fullscreen,
+    /// Buffer copies for readback. Runs in the root
+    /// [`RenderGraph`] schedule, after every camera
+    /// has rendered.
+    ReadbackCopy,
 }
 
 // ---------------------------------------------------------------------------
@@ -565,10 +571,20 @@ impl Plugin for FullscreenFragmentPlugin {
             .add_systems(
                 RenderStartup,
                 pipeline::init_pipeline.in_set(FragmentSystems::InitPipeline),
+            )
+            .add_systems(
+                Render,
+                pipeline::queue_fullscreen_pipelines.in_set(RenderSystems::Prepare),
             );
 
-        render_app
-            .add_render_graph_node::<ViewNodeRunner<FullscreenNode>>(Core3d, FullscreenShaderNode)
-            .add_render_graph_edges(Core3d, (FullscreenShaderNode, Node3d::StartMainPass));
+        // After the prepass and before the main pass, which draws on top. Only one
+        // `FullscreenFragmentPlugin` is supported per app.
+        render_app.add_systems(
+            Core3d,
+            fullscreen_pass
+                .in_set(ShaderPassSystems::Fullscreen)
+                .after(Core3dSystems::Prepass)
+                .before(Core3dSystems::MainPass),
+        );
     }
 }

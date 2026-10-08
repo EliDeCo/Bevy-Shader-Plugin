@@ -21,13 +21,12 @@ default = []
 spirv = ["bevy/shader_format_spirv"]
 
 [dependencies]
-bevy = "0.18.0"
+bevy = "0.19.1"
 encase = "0.12"
-wgpu = "27"
-# Reads `@workgroup_size` from compute shaders. Must match the naga version wgpu uses.
-naga = { version = "27", features = ["wgsl-in"] }
+wgpu = "29"
+naga = { version = "29", features = ["wgsl-in"] }
 
 # Lets `cargo run --example solar_system_rust` load its `.spv` without `--features spirv`.
 # Dev-dependency features only apply to examples/tests, not to users of the crate.
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-bevy = { version = "0.18.0", features = ["shader_format_spirv"] }
+bevy = { version = "0.19.1", features = ["shader_format_spirv"] }

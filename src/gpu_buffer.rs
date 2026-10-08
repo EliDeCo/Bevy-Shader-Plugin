@@ -11,7 +11,7 @@ use bevy::{
         Render, RenderApp,
         render_asset::RenderAssets,
         render_resource::BufferUsages,
-        storage::{GpuShaderStorageBuffer, ShaderStorageBuffer},
+        storage::{GpuShaderBuffer, ShaderBuffer},
     },
 };
 use encase::{ShaderSize, internal::WriteInto};
@@ -29,14 +29,14 @@ use crate::{
 /// never re-uploaded from the CPU, so whatever shaders write to it persists across frames.
 #[derive(Resource)]
 pub struct GpuBuffer<Tag> {
-    handle: Handle<ShaderStorageBuffer>,
+    handle: Handle<ShaderBuffer>,
     len: u32,
     _marker: PhantomData<Tag>,
 }
 
 impl<Tag> GpuBuffer<Tag> {
     /// The storage buffer asset backing this buffer.
-    pub fn handle(&self) -> &Handle<ShaderStorageBuffer> {
+    pub fn handle(&self) -> &Handle<ShaderBuffer> {
         &self.handle
     }
 
@@ -63,7 +63,7 @@ where
     Tag: Send + Sync + 'static,
     T: ShaderSize + WriteInto + Default + Send + Sync + 'static,
 {
-    let mut storage = ShaderStorageBuffer::new(
+    let mut storage = ShaderBuffer::new(
         &default_filled_bytes::<T>(len as usize),
         RenderAssetUsages::default(),
     );
@@ -73,7 +73,7 @@ where
 
     let handle = app
         .world_mut()
-        .resource_mut::<Assets<ShaderStorageBuffer>>()
+        .resource_mut::<Assets<ShaderBuffer>>()
         .add(storage);
     let asset_id = handle.id();
 
@@ -104,8 +104,7 @@ where
 
     render_app.add_systems(
         Render,
-        (move |buffers: Res<RenderAssets<GpuShaderStorageBuffer>>,
-               mut table: ResMut<BindingTable>| {
+        (move |buffers: Res<RenderAssets<GpuShaderBuffer>>, mut table: ResMut<BindingTable>| {
             if let Some(gpu_buffer) = buffers.get(asset_id) {
                 table.set_buffer(group_index, binding_index, &gpu_buffer.buffer);
             }

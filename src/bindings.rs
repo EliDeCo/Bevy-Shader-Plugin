@@ -48,7 +48,7 @@ pub struct AutoBufferLayoutDescriptors(pub Vec<BindGroupLayoutDescriptor>);
 /// Assembled bind groups for all auto-managed buffers, keyed by WGSL group index.
 ///
 /// Rebuilt in [`ShaderSystems::FinalizeBindGroups`](crate::ShaderSystems::FinalizeBindGroups) only when a binding in the group changes.
-/// Read by [`FullscreenNode`](crate::FullscreenNode) and the compute node.
+/// Read by [`fullscreen_pass`](crate::fullscreen_pass) and the compute pass.
 #[derive(Resource, Default)]
 pub struct AutoBufferBindGroups(pub BTreeMap<u32, BindGroup>);
 

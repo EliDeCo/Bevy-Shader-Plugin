@@ -1,6 +1,6 @@
 # bevy_shader_plugin
 
-A Bevy plugin for fullscreen fragment shaders and the compute shaders that feed them. Handles render graph wiring, pipeline creation, and buffer management.
+A Bevy plugin for fullscreen fragment shaders and the compute shaders that feed them. Handles render scheduling, pipeline creation, and buffer management.
 
 The plugin renders through Bevy's 3D pipeline, so it needs a `Camera3d`. It is not compatible with MSAA, make sure to disable it on all cameras:
 ```rust
@@ -11,7 +11,7 @@ commands.spawn((Camera3d::default(), Msaa::Off));
 
 | `bevy-shader-plugin` | Bevy | rust-gpu |
 |---|---|---|
-| 0.3 | 0.18 | 0.10.0-alpha.1 |
+| 0.3 | 0.19 | 0.10.0-alpha.1 |
 | 0.2 | 0.18 | 0.10.0-alpha.1 |
 | 0.1 | 0.18 | — |
 
@@ -229,6 +229,7 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
   }
   ```
 - Only one `ComputeShaderPlugin` is supported per app.
+- To order your own render systems around this crate's GPU work, use the `ShaderPassSystems` sets (`Compute`, `Fullscreen`, `ReadbackCopy`).
 
 ### Dispatch sizes
 

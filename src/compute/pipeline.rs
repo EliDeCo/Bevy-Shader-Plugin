@@ -56,7 +56,7 @@ pub(crate) fn init_compute_pipelines(
                 pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
                     label: Some(format!("compute_pipeline_{}", pass.entry).into()),
                     layout: descriptors.0.clone(),
-                    push_constant_ranges: Vec::new(),
+                    immediate_size: 0,
                     shader: shader.clone(),
                     shader_defs: Vec::new(),
                     entry_point: Some(pass.entry.into()),

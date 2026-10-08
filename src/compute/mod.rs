@@ -8,18 +8,18 @@ use std::{
 };
 
 use bevy::{
+    core_pipeline::schedule::camera_driver,
     prelude::*,
     render::{
         Extract, ExtractSchedule, Render, RenderApp, RenderStartup, RenderSystems,
-        graph::CameraDriverLabel, render_graph::RenderGraph,
+        renderer::{RenderGraph, RenderGraphSystems},
     },
     shader::Shader,
     window::PrimaryWindow,
 };
 
-use crate::{ShaderSystems, add_core_plugin, gpu_buffer::GpuBufferLengths};
+use crate::{ShaderPassSystems, ShaderSystems, add_core_plugin, gpu_buffer::GpuBufferLengths};
 
-pub use node::ComputeShaderNode;
 use reflect::{ComputeReflection, WorkgroupSize};
 
 /// WebGPU's guaranteed maximum workgroup count per dispatch dimension.
@@ -228,9 +228,14 @@ impl Plugin for ComputeShaderPlugin {
                     .after(ShaderSystems::FinalizeBindGroups),
             );
 
-        let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();
-        render_graph.add_node(ComputeShaderNode, node::ComputeNode);
-        render_graph.add_node_edge(ComputeShaderNode, CameraDriverLabel);
+        // Before `camera_driver`, so compute work is submitted ahead of every camera.
+        render_app.add_systems(
+            RenderGraph,
+            node::compute_pass
+                .in_set(ShaderPassSystems::Compute)
+                .in_set(RenderGraphSystems::Render)
+                .before(camera_driver),
+        );
     }
 }
 

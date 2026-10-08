@@ -8,15 +8,14 @@ use std::{
 };
 
 use bevy::{
+    core_pipeline::schedule::camera_driver,
     prelude::*,
     render::{
         Render, RenderApp, RenderSystems,
-        graph::CameraDriverLabel,
         render_asset::RenderAssets,
-        render_graph::{Node, NodeRunError, RenderGraph, RenderGraphContext, RenderLabel},
         render_resource::{Buffer, BufferDescriptor, BufferUsages, MapMode},
-        renderer::{RenderContext, RenderDevice, render_system},
-        storage::GpuShaderStorageBuffer,
+        renderer::{RenderContext, RenderDevice, RenderGraph, RenderGraphSystems},
+        storage::GpuShaderBuffer,
     },
 };
 use encase::{
@@ -25,7 +24,7 @@ use encase::{
 };
 
 use crate::{
-    ArrayBufferChanges, ShaderSystems,
+    ArrayBufferChanges, ShaderPassSystems, ShaderSystems,
     auto_array::{ArrayBufferState, array_stride},
     bindings::AutoBufferKind,
     cpu_buffer::CpuBuffer,
@@ -134,7 +133,7 @@ impl<S> StorageReadback<S> {
 // Render world
 // ---------------------------------------------------------------------------
 
-/// One buffer copy recorded by [`ReadbackNode`] this frame.
+/// One buffer copy recorded by [`readback_copy_pass`] this frame.
 struct QueuedCopy {
     source: Buffer,
     staging: Buffer,
@@ -143,7 +142,7 @@ struct QueuedCopy {
 }
 
 /// Copies queued this frame. Filled during `PrepareBindGroups`, recorded by
-/// [`ReadbackNode`], then mapped and cleared by [`map_readbacks`].
+/// [`readback_copy_pass`], then mapped and cleared by [`map_readbacks`].
 #[derive(Resource, Default)]
 struct ReadbackCopies(Vec<QueuedCopy>);
 
@@ -227,33 +226,17 @@ impl<Key> ReadbackJob<Key> {
     }
 }
 
-/// Render graph label of the readback copy node. It runs in the root render graph after
-/// [`CameraDriverLabel`], so copies see everything the frame's compute passes and
-/// cameras wrote.
-#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-pub struct ReadbackCopyNode;
-
-#[derive(Default)]
-struct ReadbackNode;
-
-impl Node for ReadbackNode {
-    fn run<'w>(
-        &self,
-        _graph: &mut RenderGraphContext,
-        render_context: &mut RenderContext<'w>,
-        world: &'w World,
-    ) -> Result<(), NodeRunError> {
-        let Some(copies) = world.get_resource::<ReadbackCopies>() else {
-            return Ok(());
-        };
-        if copies.0.is_empty() {
-            return Ok(());
-        }
-        let encoder = render_context.command_encoder();
-        for copy in &copies.0 {
-            encoder.copy_buffer_to_buffer(&copy.source, 0, &copy.staging, 0, copy.size);
-        }
-        Ok(())
+/// Records every queued readback copy. Runs in the root
+/// [`RenderGraph`] schedule after
+/// [`camera_driver`](bevy::core_pipeline::schedule::camera_driver), so copies see
+/// everything the frame's compute passes and cameras wrote.
+fn readback_copy_pass(copies: Res<ReadbackCopies>, mut ctx: RenderContext) {
+    if copies.0.is_empty() {
+        return;
+    }
+    let encoder = ctx.command_encoder();
+    for copy in &copies.0 {
+        encoder.copy_buffer_to_buffer(&copy.source, 0, &copy.staging, 0, copy.size);
     }
 }
 
@@ -294,15 +277,18 @@ impl Plugin for ReadbackPlugin {
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
-        render_app.init_resource::<ReadbackCopies>().add_systems(
-            Render,
-            map_readbacks
-                .after(render_system)
-                .in_set(RenderSystems::Render),
-        );
-        let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();
-        render_graph.add_node(ReadbackCopyNode, ReadbackNode);
-        render_graph.add_node_edge(CameraDriverLabel, ReadbackCopyNode);
+        render_app
+            .init_resource::<ReadbackCopies>()
+            .add_systems(
+                RenderGraph,
+                readback_copy_pass
+                    .in_set(ShaderPassSystems::ReadbackCopy)
+                    .in_set(RenderGraphSystems::Render)
+                    .after(camera_driver),
+            )
+            // Cleanup runs after the frame's commands are submitted, which is also where
+            // Bevy maps its own readbacks.
+            .add_systems(Render, map_readbacks.in_set(RenderSystems::Cleanup));
     }
 }
 
@@ -415,7 +401,7 @@ where
         app,
         shared,
         mode,
-        move |buffers: Res<RenderAssets<GpuShaderStorageBuffer>>,
+        move |buffers: Res<RenderAssets<GpuShaderBuffer>>,
               mut job: ResMut<ReadbackJob<GpuKey<Tag>>>,
               render_device: Res<RenderDevice>,
               mut copies: ResMut<ReadbackCopies>| {

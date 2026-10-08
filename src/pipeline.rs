@@ -1,10 +1,16 @@
+use std::collections::HashMap;
+
 use bevy::{
     asset::AssetServer,
     core_pipeline::FullscreenShader,
     prelude::*,
-    render::render_resource::{
-        BindGroupLayout, BlendState, CachedRenderPipelineId, ColorTargetState, ColorWrites,
-        FragmentState, MultisampleState, PipelineCache, RenderPipelineDescriptor, TextureFormat,
+    render::{
+        render_resource::{
+            BindGroupLayout, BlendState, CachedRenderPipelineId, ColorTargetState, ColorWrites,
+            FragmentState, MultisampleState, PipelineCache, RenderPipelineDescriptor,
+            TextureFormat,
+        },
+        view::ExtractedView,
     },
 };
 
@@ -19,16 +25,29 @@ pub struct FullscreenPipelineConfig {
 }
 
 /// Render-world resource created by `init_pipeline`.
+///
+/// A camera's texture format depends on its window surface (and on HDR), so one
+/// pipeline is queued per distinct format the cameras use.
 #[derive(Resource)]
 pub struct FullscreenPipeline {
-    pub pipeline_id: CachedRenderPipelineId,
+    /// Pipeline description shared by every format; only the color target differs.
+    descriptor: RenderPipelineDescriptor,
+    pipelines: HashMap<TextureFormat, CachedRenderPipelineId>,
     /// Compiled [`BindGroupLayout`] for each manual extra group registered via
     /// [`FragmentExtraLayouts`]. Index 0 corresponds to the first manual extra group.
     pub extra_layouts: Vec<BindGroupLayout>,
 }
 
-/// `RenderStartup` system. Queues the render pipeline using the auto-buffer group layouts
-/// (compiled by the shared core) followed by the manual extra groups.
+impl FullscreenPipeline {
+    /// The pipeline for views rendering to `format`, once it has been queued.
+    pub fn pipeline_id(&self, format: TextureFormat) -> Option<CachedRenderPipelineId> {
+        self.pipelines.get(&format).copied()
+    }
+}
+
+/// `RenderStartup` system. Prepares the pipeline description using the auto-buffer group
+/// layouts (compiled by the shared core) followed by the manual extra groups. Pipelines
+/// are queued per camera format by [`queue_fullscreen_pipelines`].
 pub(crate) fn init_pipeline(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -41,21 +60,15 @@ pub(crate) fn init_pipeline(
     let mut all_layouts = auto_buffer_descriptors.0.clone();
     all_layouts.extend(extra_layouts.0.iter().cloned());
 
-    let shader = asset_server.load(config.shader_path);
-    let vertex_state = fullscreen_shader.to_vertex_state();
-
-    let pipeline_id = pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
+    let descriptor = RenderPipelineDescriptor {
         label: Some("fullscreen_fragment_pipeline".into()),
         layout: all_layouts,
-        vertex: vertex_state,
+        vertex: fullscreen_shader.to_vertex_state(),
         fragment: Some(FragmentState {
-            shader,
+            shader: asset_server.load(config.shader_path),
             entry_point: config.entry_point.map(Into::into),
-            targets: vec![Some(ColorTargetState {
-                format: TextureFormat::bevy_default(),
-                blend: Some(BlendState::ALPHA_BLENDING),
-                write_mask: ColorWrites::ALL,
-            })],
+            // Filled in per camera format by `queue_fullscreen_pipelines`.
+            targets: Vec::new(),
             ..default()
         }),
         multisample: MultisampleState {
@@ -64,7 +77,7 @@ pub(crate) fn init_pipeline(
             alpha_to_coverage_enabled: false,
         },
         ..default()
-    });
+    };
 
     let extra_compiled: Vec<BindGroupLayout> = extra_layouts
         .0
@@ -73,7 +86,35 @@ pub(crate) fn init_pipeline(
         .collect();
 
     commands.insert_resource(FullscreenPipeline {
-        pipeline_id,
+        descriptor,
+        pipelines: HashMap::new(),
         extra_layouts: extra_compiled,
     });
+}
+
+/// Queues a pipeline for every camera texture format that doesn't have one yet.
+pub(crate) fn queue_fullscreen_pipelines(
+    pipeline: Option<ResMut<FullscreenPipeline>>,
+    pipeline_cache: Res<PipelineCache>,
+    views: Query<&ExtractedView>,
+) {
+    let Some(mut pipeline) = pipeline else {
+        return;
+    };
+    for view in &views {
+        let format = view.target_format;
+        if pipeline.pipelines.contains_key(&format) {
+            continue;
+        }
+        let mut descriptor = pipeline.descriptor.clone();
+        if let Some(fragment) = &mut descriptor.fragment {
+            fragment.targets = vec![Some(ColorTargetState {
+                format,
+                blend: Some(BlendState::ALPHA_BLENDING),
+                write_mask: ColorWrites::ALL,
+            })];
+        }
+        let id = pipeline_cache.queue_render_pipeline(descriptor);
+        pipeline.pipelines.insert(format, id);
+    }
 }
