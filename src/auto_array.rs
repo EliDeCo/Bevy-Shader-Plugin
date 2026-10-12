@@ -4,13 +4,13 @@ use bevy::{
     prelude::*,
     render::{
         ExtractSchedule, MainWorld, Render, RenderApp, RenderStartup,
-        render_resource::{Buffer, BufferUsages},
+        render_resource::{
+            Buffer, BufferInitDescriptor, BufferUsages,
+            encase::{self, ShaderSize, internal::WriteInto},
+        },
         renderer::{RenderDevice, RenderQueue},
     },
 };
-use encase::ShaderSize;
-use encase::internal::WriteInto;
-use wgpu::util::BufferInitDescriptor;
 
 use crate::{
     ShaderSystems,

@@ -12,11 +12,21 @@ commands.spawn((Camera3d::default(), Msaa::Off));
 | `bevy-shader-plugin` | Bevy | rust-gpu |
 |---|---|---|
 | 0.2 | 0.19 | 0.10.0 |
-| 0.1 | 0.18 | — |
+| 0.1\* | 0.18 | — |
 
-Version 0.1 was published as `bevy-fragment-shader-plugin`.
+\* Version 0.1 is a separate crate, published as [`bevy-fragment-shader-plugin`](https://crates.io/crates/bevy-fragment-shader-plugin).
 
 ## Setup
+
+Add both crates to your `Cargo.toml`:
+
+```toml
+[dependencies]
+bevy = "0.19"
+bevy-shader-plugin = "0.2"
+```
+
+The plugin turns on only the Bevy features it needs itself (rendering, the core pipeline and logging), so it doesn't pull in the rest of Bevy. Your app's own `bevy` dependency decides everything else, such as windowing and input. Bevy's default features cover everything the examples use.
 
 Import everything you need in two lines:
 

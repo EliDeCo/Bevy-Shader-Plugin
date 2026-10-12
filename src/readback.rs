@@ -13,14 +13,16 @@ use bevy::{
     render::{
         Render, RenderApp, RenderSystems,
         render_asset::RenderAssets,
-        render_resource::{Buffer, BufferDescriptor, BufferUsages, MapMode},
+        render_resource::{
+            Buffer, BufferDescriptor, BufferUsages, MapMode,
+            encase::{
+                self, ShaderSize, ShaderType,
+                internal::{CreateFrom, WriteInto},
+            },
+        },
         renderer::{RenderContext, RenderDevice, RenderGraph, RenderGraphSystems},
         storage::GpuShaderBuffer,
     },
-};
-use encase::{
-    ShaderSize, ShaderType,
-    internal::{CreateFrom, WriteInto},
 };
 
 use crate::{

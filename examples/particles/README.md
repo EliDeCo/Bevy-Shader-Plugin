@@ -31,9 +31,17 @@ The two versions run the same simulation and look the same.
 
 ## Running it
 
-These files are for reference and aren't built by this crate. To run them:
+These files are for reference and aren't built by this crate. They need Bevy's default
+features (windowing, keyboard input and time) on top of what the plugin enables:
 
-- **WGSL:** in a project that depends on `bevy-shader-plugin`, copy `wgsl/app.rs` to
+```toml
+[dependencies]
+bevy = "0.19"
+bevy-shader-plugin = "0.2"                                     # WGSL
+# bevy-shader-plugin = { version = "0.2", features = ["spirv"] } # Rust
+```
+
+- **WGSL:** in a project with the dependencies above, copy `wgsl/app.rs` to
   `src/main.rs` and `wgsl/shader.wgsl` to `assets/shaders/particles.wgsl`, then `cargo run`.
 - **Rust:** clone [bevy-shader-plugin-rust-template](https://github.com/EliDeCo/bevy-shader-plugin-rust-template),
   copy `rust/app.rs` over its `src/main.rs` and `rust/shader.rs` over its `shader/src/lib.rs`,

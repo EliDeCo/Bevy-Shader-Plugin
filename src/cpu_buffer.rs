@@ -2,11 +2,13 @@ use bevy::{
     prelude::*,
     render::{
         Extract, ExtractSchedule, Render, RenderApp,
-        render_resource::{Buffer, BufferUsages, ShaderType, StorageBuffer, UniformBuffer},
+        render_resource::{
+            Buffer, BufferUsages, ShaderType, StorageBuffer, UniformBuffer,
+            encase::internal::WriteInto,
+        },
         renderer::{RenderDevice, RenderQueue},
     },
 };
-use encase::internal::WriteInto;
 
 use crate::{
     ShaderSystems,

@@ -14,14 +14,12 @@ use bevy::{
     render::{
         Render, RenderApp, RenderStartup, RenderSystems,
         render_resource::{
-            BindGroup, BindGroupLayoutDescriptor, BindGroupLayoutEntries, ShaderStages, ShaderType,
+            BindGroup, BindGroupLayoutDescriptor, BindGroupLayoutEntries, ShaderSize, ShaderStages,
+            ShaderType,
             binding_types::{storage_buffer_read_only_sized, storage_buffer_sized},
+            encase::internal::{CreateFrom, WriteInto},
         },
     },
-};
-use encase::{
-    ShaderSize,
-    internal::{CreateFrom, WriteInto},
 };
 
 pub use auto_array::{ArrayBufferChanges, ArrayBufferState};

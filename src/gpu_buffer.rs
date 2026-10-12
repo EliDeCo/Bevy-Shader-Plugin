@@ -10,11 +10,10 @@ use bevy::{
     render::{
         Render, RenderApp,
         render_asset::RenderAssets,
-        render_resource::BufferUsages,
+        render_resource::{BufferUsages, ShaderSize, encase::internal::WriteInto},
         storage::{GpuShaderBuffer, ShaderBuffer},
     },
 };
-use encase::{ShaderSize, internal::WriteInto};
 
 use crate::{
     ShaderSystems,
