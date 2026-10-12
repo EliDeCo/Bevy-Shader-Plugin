@@ -65,7 +65,7 @@ fn frag_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
 }
 ```
 
-See [`examples/solar_system.rs`](examples/solar_system.rs) for a complete example combining uniform, storage, and array buffers.
+See [`examples/solar_system/`](examples/solar_system/) for a complete example combining uniform, storage, and array buffers.
 
 To run a simulation on the GPU and draw it, see [Compute shaders](#compute-shaders).
 
@@ -243,7 +243,7 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
 
 Reflection only supports plain WGSL. Shaders that use Bevy's `#import`, or a `@workgroup_size` built from `override` constants, can't be reflected; use `Workgroups::exact` for those passes.
 
-See [`examples/particles.rs`](examples/particles.rs) for a complete simulation: gravity and collisions computed on the GPU, drawn by the fragment shader.
+See [`examples/particles/`](examples/particles/) for a complete simulation: gravity and collisions computed on the GPU, drawn by the fragment shader.
 
 ---
 
@@ -251,7 +251,9 @@ See [`examples/particles.rs`](examples/particles.rs) for a complete simulation: 
 
 Fragment and compute shaders can be written in Rust with [rust-gpu](https://github.com/Rust-GPU/rust-gpu) 0.10.0 instead of WGSL.
 
-Enable the `spirv` feature. It lets Bevy load `.spv` shaders and lets `Workgroups` read workgroup sizes from them:
+The easiest way to start is [bevy-shader-plugin-rust-template](https://github.com/EliDeCo/bevy-shader-plugin-rust-template). Clone it and `cargo run`. It's a minimal app with the nightly toolchain and a `build.rs` already set up, so shaders are recompiled automatically whenever they change.
+
+To use rust-gpu shaders in your own project, enable the `spirv` feature. It lets Bevy load `.spv` shaders and lets `Workgroups` read workgroup sizes from them:
 
 ```toml
 bevy-shader-plugin = { version = "0.2", features = ["spirv"] }
@@ -290,26 +292,13 @@ Not supported on web — leave the feature off for wasm builds.
 
 Stick to `Vec2`, `Vec4`, `f32`, `u32` and arrays of them. Avoid `Vec3`. Keep arrays out of uniform buffers unless the element is 16 bytes — use a storage buffer instead. Mark shared structs `#[repr(C)]`.
 
-### Building the shaders
-
-[`examples/rust_gpu/shader-build/`](examples/rust_gpu/shader-build/) builds the shaders for both rust-gpu examples. The shader crates are in `shaders/solar_system` and `shaders/particles`. The compiled shaders are committed at `assets/shaders/*_rust.spv`, so the examples run on stable. Rebuilding them after editing a shader needs `nightly-2026-07-03` with the `rust-src`, `rustc-dev` and `llvm-tools` components:
-
-```sh
-cd examples/rust_gpu/shader-build
-cargo build   # writes assets/shaders/solar_system_rust.spv and particles_rust.spv
-```
-
-The first build takes several minutes, later ones a few seconds. On Windows, antivirus software can lock files during the first build (`LNK1114` or `os error 32`); re-running `cargo build` continues where it stopped.
-
-Keep shader crates inside `shader-build/`. As a sibling they build with the wrong toolchain and fail with `the -Z flag is only accepted on the nightly channel`.
-
 ---
 
-## Running the examples
+## Examples
 
-```sh
-cargo run --example solar_system        # orbital simulation using all three CPU buffer types, plus a compute pass read back every frame
-cargo run --example particles           # compute-shader particle simulation with CPU readback (press R to respawn)
-cargo run --example solar_system_rust --features spirv   # the solar system, with the shaders written in Rust (native only)
-cargo run --example particles_rust --features spirv      # the particle simulation, with the shaders written in Rust (native only)
-```
+Each example has its app (CPU) and shader (GPU) code in both WGSL and Rust, and a README with a screenshot of what it should look like. They're reference code to copy into a project, not runnable from this repository. Each README explains where the files go.
+
+- [`examples/solar_system/`](examples/solar_system/): orbiting planets drawn with all three CPU buffer types, plus a compute pass whose result is read back every frame.
+- [`examples/particles/`](examples/particles/): a particle simulation run entirely in compute passes, with CPU readback (press R to respawn).
+
+The Rust versions drop straight into [bevy-shader-plugin-rust-template](https://github.com/EliDeCo/bevy-shader-plugin-rust-template).

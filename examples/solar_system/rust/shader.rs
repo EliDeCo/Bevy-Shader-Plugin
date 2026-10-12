@@ -1,4 +1,6 @@
-//! Rust port of `assets/shaders/solar_system.wgsl`, used by `examples/solar_system_rust.rs`.
+//! Solar system example, rust-gpu version: the shader, used by `app.rs` next to this file.
+//! It's the shader crate's `lib.rs` (`shader/src/lib.rs` in bevy-shader-plugin-rust-template),
+//! and a port of `../wgsl/shader.wgsl`.
 //!   set(0) uniform:            resolution (no time; all motion is computed on the CPU)
 //!   set(1) binding(0) storage: planet UV positions, fully re-uploaded every frame
 //!   set(1) binding(1) storage: average planet position, written by `average_positions`

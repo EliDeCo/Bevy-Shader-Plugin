@@ -1,4 +1,6 @@
-//! Rust port of `assets/shaders/particles.wgsl`, used by `examples/particles_rust.rs`.
+//! Particles example, rust-gpu version: the shader, used by `app.rs` next to this file.
+//! It's the shader crate's `lib.rs` (`shader/src/lib.rs` in bevy-shader-plugin-rust-template),
+//! and a port of `../wgsl/shader.wgsl`.
 //!   init       (compute, once):          scatters particles across the top of the window
 //!   collide    (compute, every substep): works out each particle's collision response
 //!   integrate  (compute, every substep): applies gravity + collisions, moves, bounces off walls

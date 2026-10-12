@@ -1,3 +1,9 @@
+//! Solar system example, WGSL version: the app side. The shader is `shader.wgsl` next to
+//! this file.
+//!
+//! Reference code, not built by this crate. To run it, copy this file into your project
+//! (e.g. as `src/main.rs`) and `shader.wgsl` to `assets/shaders/solar_system.wgsl`.
+
 use bevy::prelude::*;
 use bevy_shader_plugin::prelude::*;
 
@@ -38,7 +44,10 @@ struct OrbitalState {
 
 impl Default for OrbitalState {
     fn default() -> Self {
-        let mut s = Self { angles: [0.0; N], orbit_counts: [0; N] };
+        let mut s = Self {
+            angles: [0.0; N],
+            orbit_counts: [0; N],
+        };
         // Spread starting positions so planets don't all begin at the same point.
         for i in 0..N {
             s.angles[i] = i as f32 / N as f32 * std::f32::consts::TAU;
@@ -76,7 +85,6 @@ fn main() {
         // Array buffer — per-planet colors; only updated when a planet completes an orbit
         .register_array_buffer::<PlanetColors, Vec4, N>(2, 0, false)
         .init_resource::<OrbitalState>()
-
         .add_systems(Startup, setup)
         .add_systems(Update, (update_resolution, update_planets, print_average))
         .run();

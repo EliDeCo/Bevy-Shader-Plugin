@@ -1,3 +1,9 @@
+//! Particles example, WGSL version: the app side. The shader is `shader.wgsl` next to
+//! this file.
+//!
+//! Reference code, not built by this crate. To run it, copy this file into your project
+//! (e.g. as `src/main.rs`) and `shader.wgsl` to `assets/shaders/particles.wgsl`.
+
 use bevy::prelude::*;
 use bevy_shader_plugin::prelude::*;
 

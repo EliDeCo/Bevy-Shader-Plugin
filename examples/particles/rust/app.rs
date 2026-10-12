@@ -1,15 +1,15 @@
-//! The `particles` example with its shaders written in Rust (rust-gpu) instead of WGSL.
-//! Run with `cargo run --example particles_rust --features spirv`.
+//! Particles example, rust-gpu version: the app side. The shader is `shader.rs` next to
+//! this file.
 //!
-//! The compiled shader is committed at `assets/shaders/particles_rust.spv`. Its source is
-//! `examples/rust_gpu/shader-build/shaders/particles`; rebuild it with
-//! `cd examples/rust_gpu/shader-build && cargo build`.
+//! Reference code, not built by this crate. To run it, copy this file over `src/main.rs` in
+//! bevy-shader-plugin-rust-template and `shader.rs` over its `shader/src/lib.rs`.
 
 use bevy::prelude::*;
 use bevy_shader_plugin::prelude::*;
 
-// One module holds both the compute passes and the fragment shader that draws the result.
-const SHADER_PATH: &str = "shaders/particles_rust.spv";
+// Written by the template's build.rs. One module holds both the compute passes and the
+// fragment shader that draws the result.
+const SHADER_PATH: &str = "shaders/shader.spv";
 // rust-gpu names entry points after their functions.
 const FRAGMENT_ENTRY: &str = "draw";
 const N: u32 = 500;

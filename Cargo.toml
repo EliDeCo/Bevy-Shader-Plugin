@@ -8,6 +8,8 @@ repository = "https://github.com/EliDeCo/Bevy-Shader-Plugin"
 readme = "README.md"
 keywords = ["bevy", "shader", "compute", "plugin", "wgpu"]
 categories = ["game-development", "graphics", "rendering"]
+# `examples/` holds reference code to copy into a project, not runnable targets.
+autoexamples = false
 
 [lib]
 name = "bevy_shader_plugin"
@@ -24,12 +26,3 @@ bevy = "0.19.1"
 encase = "0.12"
 wgpu = "29"
 naga = { version = "29", features = ["wgsl-in"] }
-
-# The rust-gpu examples load `.spv` shaders: `cargo run --example <name> --features spirv`.
-[[example]]
-name = "solar_system_rust"
-required-features = ["spirv"]
-
-[[example]]
-name = "particles_rust"
-required-features = ["spirv"]
