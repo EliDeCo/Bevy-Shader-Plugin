@@ -30,9 +30,15 @@ pub(crate) fn compute_workgroup_sizes(
 ) -> Result<HashMap<String, WorkgroupSize>, String> {
     match source {
         Source::Wgsl(code) => wgsl_workgroup_sizes(code),
-        // rust-gpu support will parse SPIR-V here with naga's `spv-in` frontend.
+        #[cfg(feature = "spirv")]
+        Source::SpirV(bytes) => spirv_workgroup_sizes(bytes),
+        #[cfg(not(feature = "spirv"))]
+        Source::SpirV(_) => Err(
+            "reading workgroup sizes from SPIR-V needs the `spirv` feature; enable it or use `Workgroups::exact`"
+                .into(),
+        ),
         _ => Err(
-            "workgroup size reflection only supports WGSL shaders; use `Workgroups::exact` instead"
+            "workgroup size reflection supports WGSL and SPIR-V shaders; use `Workgroups::exact` instead"
                 .into(),
         ),
     }
@@ -40,7 +46,27 @@ pub(crate) fn compute_workgroup_sizes(
 
 pub(crate) fn wgsl_workgroup_sizes(code: &str) -> Result<HashMap<String, WorkgroupSize>, String> {
     let module = naga::front::wgsl::parse_str(code).map_err(|e| e.emit_to_string(code))?;
-    Ok(module
+    Ok(module_workgroup_sizes(&module))
+}
+
+/// Reads compute workgroup sizes from a SPIR-V module (e.g. one built by rust-gpu), where
+/// they're declared by `LocalSize` execution modes.
+#[cfg(feature = "spirv")]
+pub(crate) fn spirv_workgroup_sizes(
+    bytes: &[u8],
+) -> Result<HashMap<String, WorkgroupSize>, String> {
+    let options = naga::front::spv::Options {
+        // Only entry points and workgroup sizes are needed here; wgpu does the real
+        // validation when it creates the pipeline.
+        strict_capabilities: false,
+        ..Default::default()
+    };
+    let module = naga::front::spv::parse_u8_slice(bytes, &options).map_err(|e| e.to_string())?;
+    Ok(module_workgroup_sizes(&module))
+}
+
+fn module_workgroup_sizes(module: &naga::Module) -> HashMap<String, WorkgroupSize> {
+    module
         .entry_points
         .iter()
         .filter(|entry| entry.stage == naga::ShaderStage::Compute)
@@ -52,7 +78,7 @@ pub(crate) fn wgsl_workgroup_sizes(code: &str) -> Result<HashMap<String, Workgro
             };
             (entry.name.clone(), size)
         })
-        .collect())
+        .collect()
 }
 
 /// Re-reflects the compute shader whenever it finishes loading or is hot-reloaded.

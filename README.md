@@ -11,11 +11,10 @@ commands.spawn((Camera3d::default(), Msaa::Off));
 
 | `bevy-shader-plugin` | Bevy | rust-gpu |
 |---|---|---|
-| 0.3 | 0.19 | 0.10.0-alpha.1 |
-| 0.2 | 0.18 | 0.10.0-alpha.1 |
+| 0.2 | 0.19 | 0.10.0 |
 | 0.1 | 0.18 | — |
 
-Versions 0.1 and 0.2 were published as `bevy-fragment-shader-plugin`.
+Version 0.1 was published as `bevy-fragment-shader-plugin`.
 
 ## Setup
 
@@ -250,51 +249,59 @@ See [`examples/particles.rs`](examples/particles.rs) for a complete simulation: 
 
 ## Using rust-gpu shaders
 
-Fragment shaders can be written in Rust with [rust-gpu](https://github.com/Rust-GPU/rust-gpu) instead of WGSL.
+Fragment and compute shaders can be written in Rust with [rust-gpu](https://github.com/Rust-GPU/rust-gpu) 0.10.0 instead of WGSL.
 
-Enable the `spirv` feature:
+Enable the `spirv` feature. It lets Bevy load `.spv` shaders and lets `Workgroups` read workgroup sizes from them:
 
 ```toml
-bevy-shader-plugin = { version = "0.3", features = ["spirv"] }
+bevy-shader-plugin = { version = "0.2", features = ["spirv"] }
 ```
 
-Point the plugin at a `.spv`. Naming the entry point is only required if the module has more than one:
+Point the plugins at a `.spv` and name entry points after their Rust functions. The fragment entry point only needs naming if the module has more than one entry point, which it does whenever it also contains compute passes:
 
 ```rust
-FullscreenFragmentPlugin::new("shaders/my_shader.spv")
-    .with_entry_point("main_fs")
+FullscreenFragmentPlugin::new("shaders/my_shader.spv").with_entry_point("main_fs")
+ComputeShaderPlugin::new("shaders/my_shader.spv").pass("update", Workgroups::over::<Particles>())
 ```
 
 In the shader, `descriptor_set` is the group index and `binding` is the binding index, so they line up with the registration functions above:
 
 ```rust
+#[spirv(compute(threads(64)))]
+pub fn update(
+    #[spirv(global_invocation_id)] id: UVec3,
+    #[spirv(uniform, descriptor_set = 0, binding = 0)] params: &SimParams,
+    #[spirv(storage_buffer, descriptor_set = 1, binding = 0)] particles: &mut [Particle],
+) { /* ... */ }
+
 #[spirv(fragment)]
 pub fn main_fs(
-    #[spirv(uniform, descriptor_set = 0, binding = 0)] u: &FrameUniform,
+    #[spirv(frag_coord)] frag_coord: Vec4,
+    #[spirv(storage_buffer, descriptor_set = 1, binding = 0)] particles: &mut [Particle],
     output: &mut Vec4,
 ) { /* ... */ }
 ```
+
+A buffer's access mode comes from its parameter type: `&` is `read` and `&mut` is `read_write`. As with WGSL, every entry point that uses a binding must match how it was registered. GPU buffers and `read_write` storage buffers must be taken as `&mut` everywhere, even in entry points that only read them.
 
 Not supported on web — leave the feature off for wasm builds.
 
 ### Buffer layout
 
-Stick to `Vec2`, `Vec4`, `f32` and arrays of them. Avoid `Vec3`. Keep arrays out of uniform buffers unless the element is 16 bytes — use a storage buffer instead.
+Stick to `Vec2`, `Vec4`, `f32`, `u32` and arrays of them. Avoid `Vec3`. Keep arrays out of uniform buffers unless the element is 16 bytes — use a storage buffer instead. Mark shared structs `#[repr(C)]`.
 
-### Building the shader
+### Building the shaders
 
-See [`examples/solar_system_rust/`](examples/solar_system_rust/) for a complete project. The compiled shader is committed at `assets/shaders/solar_system_rust.spv`, so the example runs on stable. Rebuilding it after editing the shader needs `nightly-2026-05-22` with the `rust-src`, `rustc-dev` and `llvm-tools` components:
+[`examples/rust_gpu/shader-build/`](examples/rust_gpu/shader-build/) builds the shaders for both rust-gpu examples. The shader crates are in `shaders/solar_system` and `shaders/particles`. The compiled shaders are committed at `assets/shaders/*_rust.spv`, so the examples run on stable. Rebuilding them after editing a shader needs `nightly-2026-07-03` with the `rust-src`, `rustc-dev` and `llvm-tools` components:
 
 ```sh
-cd examples/solar_system_rust/shader-build
-cargo build   # writes assets/shaders/solar_system_rust.spv
+cd examples/rust_gpu/shader-build
+cargo build   # writes assets/shaders/solar_system_rust.spv and particles_rust.spv
 ```
 
-The first build takes a few minutes, later ones a few seconds.
+The first build takes several minutes, later ones a few seconds. On Windows, antivirus software can lock files during the first build (`LNK1114` or `os error 32`); re-running `cargo build` continues where it stopped.
 
-Keep the shader crate inside `shader-build/`. As a sibling it builds with the wrong toolchain and fails with `the -Z flag is only accepted on the nightly channel`.
-
-`WARN naga::front::spv: Unknown decoration Block` on startup is harmless.
+Keep shader crates inside `shader-build/`. As a sibling they build with the wrong toolchain and fail with `the -Z flag is only accepted on the nightly channel`.
 
 ---
 
@@ -303,5 +310,6 @@ Keep the shader crate inside `shader-build/`. As a sibling it builds with the wr
 ```sh
 cargo run --example solar_system        # orbital simulation using all three CPU buffer types, plus a compute pass read back every frame
 cargo run --example particles           # compute-shader particle simulation with CPU readback (press R to respawn)
-cargo run --example solar_system_rust   # the orbital simulation (without compute), with the shader written in Rust (native only)
+cargo run --example solar_system_rust --features spirv   # the solar system, with the shaders written in Rust (native only)
+cargo run --example particles_rust --features spirv      # the particle simulation, with the shaders written in Rust (native only)
 ```
