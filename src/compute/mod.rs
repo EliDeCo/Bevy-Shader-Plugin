@@ -174,7 +174,7 @@ pub(crate) struct ComputeConfig {
 }
 
 /// This frame's dispatch plan, built in the main world and extracted to the render world.
-#[derive(Resource, Default, Clone)]
+#[derive(Resource, Default)]
 pub(crate) struct ComputeFrame {
     /// Workgroup count per pass (same order as the configured passes), or `None` if the
     /// pass can't be dispatched this frame.
@@ -216,6 +216,7 @@ impl Plugin for ComputeShaderPlugin {
                 init_done: vec![false; self.passes.len()],
             })
             .init_resource::<pipeline::ComputeRunList>()
+            .init_resource::<ComputeFrame>()
             .add_systems(ExtractSchedule, extract_compute_frame)
             .add_systems(
                 RenderStartup,
@@ -354,8 +355,13 @@ fn plan_dispatches(
     }
 }
 
-fn extract_compute_frame(mut commands: Commands, frame: Extract<Res<ComputeFrame>>) {
-    commands.insert_resource(frame.clone());
+/// Copies the plan into the render world's `ComputeFrame`, reusing its memory.
+fn extract_compute_frame(
+    frame: Extract<Res<ComputeFrame>>,
+    mut render_frame: ResMut<ComputeFrame>,
+) {
+    render_frame.counts.clone_from(&frame.counts);
+    render_frame.reruns.clone_from(&frame.reruns);
 }
 
 #[cfg(test)]

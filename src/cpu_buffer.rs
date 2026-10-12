@@ -57,18 +57,25 @@ impl<T: ShaderType + WriteInto + Default> Slot<T> {
         }
     }
 
-    fn write(&mut self, value: T, device: &RenderDevice, queue: &RenderQueue) {
-        self.written_size = value.size().get();
+    /// The value uploaded by the next [`upload`](Self::upload).
+    fn value_mut(&mut self) -> &mut T {
         match &mut self.buffer {
+            SlotBuffer::Uniform(buffer) => buffer.get_mut(),
+            SlotBuffer::Storage(buffer) => buffer.get_mut(),
+        }
+    }
+
+    fn upload(&mut self, device: &RenderDevice, queue: &RenderQueue) {
+        self.written_size = match &mut self.buffer {
             SlotBuffer::Uniform(buffer) => {
-                buffer.set(value);
                 buffer.write_buffer(device, queue);
+                buffer.get().size().get()
             }
             SlotBuffer::Storage(buffer) => {
-                buffer.set(value);
                 buffer.write_buffer(device, queue);
+                buffer.get().size().get()
             }
-        }
+        };
     }
 
     fn gpu_buffer(&self) -> Option<&Buffer> {
@@ -79,11 +86,11 @@ impl<T: ShaderType + WriteInto + Default> Slot<T> {
     }
 }
 
-/// Render-world state for a CPU-owned resource `T`: the latest extracted value and one
-/// persistent GPU buffer per registration of `T`.
+/// Render-world state for a CPU-owned resource `T`: one persistent GPU buffer per
+/// registration of `T`, each holding its own copy of the latest extracted value.
 #[derive(Resource)]
 pub(crate) struct CpuBuffer<T: ShaderType + Send + Sync + 'static> {
-    value: Option<T>,
+    /// Set when a new value was extracted and hasn't been uploaded yet.
     dirty: bool,
     slots: Vec<Slot<T>>,
 }
@@ -109,7 +116,6 @@ impl<T: ShaderType + WriteInto + Default + Send + Sync + 'static> CpuBuffer<T> {
 impl<T: ShaderType + Send + Sync + 'static> Default for CpuBuffer<T> {
     fn default() -> Self {
         Self {
-            value: None,
             dirty: false,
             slots: Vec::new(),
         }
@@ -122,7 +128,13 @@ where
     T: ShaderType + WriteInto + Default + Resource + Clone,
 {
     let render_app = app.sub_app_mut(RenderApp);
-    register_binding(render_app, group_index, binding_index, kind);
+    register_binding(
+        render_app,
+        group_index,
+        binding_index,
+        kind,
+        Some(T::min_size()),
+    );
 
     let world = render_app.world_mut();
     let first_registration = !world.contains_resource::<CpuBuffer<T>>();
@@ -142,16 +154,20 @@ where
 }
 
 /// Copies `T` into the render world only when it changed in the main world
-/// (including the first frame it exists).
+/// (including the first frame it exists). It's copied straight into each slot's buffer
+/// value with `clone_from`, which can reuse memory the previous value held.
 fn extract_cpu_buffer<T>(main_resource: Extract<Option<Res<T>>>, mut state: ResMut<CpuBuffer<T>>)
 where
-    T: ShaderType + Resource + Clone,
+    T: ShaderType + WriteInto + Default + Resource + Clone,
 {
     if let Some(resource) = main_resource.as_ref()
         && resource.is_changed()
     {
         let value: &T = resource;
-        state.value = Some(value.clone());
+        let state = &mut *state;
+        for slot in &mut state.slots {
+            slot.value_mut().clone_from(value);
+        }
         state.dirty = true;
     }
 }
@@ -168,10 +184,8 @@ fn prepare_cpu_buffer<T>(
 {
     let state = &mut *state;
     if state.dirty {
-        if let Some(value) = &state.value {
-            for slot in &mut state.slots {
-                slot.write(value.clone(), &render_device, &render_queue);
-            }
+        for slot in &mut state.slots {
+            slot.upload(&render_device, &render_queue);
         }
         state.dirty = false;
     }

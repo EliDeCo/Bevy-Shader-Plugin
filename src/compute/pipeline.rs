@@ -76,7 +76,7 @@ pub(crate) fn init_compute_pipelines(
 pub(crate) fn prepare_compute_run(
     config: Res<ComputeRenderConfig>,
     pipelines: Option<Res<ComputePipelines>>,
-    frame: Option<Res<ComputeFrame>>,
+    frame: Res<ComputeFrame>,
     pipeline_cache: Res<PipelineCache>,
     layouts: Res<AutoBufferLayouts>,
     bind_groups: Res<AutoBufferBindGroups>,
@@ -84,9 +84,13 @@ pub(crate) fn prepare_compute_run(
     mut run_list: ResMut<ComputeRunList>,
 ) {
     run_list.0.clear();
-    let (Some(pipelines), Some(frame)) = (pipelines, frame) else {
+    let Some(pipelines) = pipelines else {
         return;
     };
+    // Empty until the first plan is extracted.
+    if frame.counts.len() != config.passes.len() {
+        return;
+    }
 
     for &index in &frame.reruns {
         state.init_done[index] = false;

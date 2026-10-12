@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    num::NonZeroU64,
+};
 
 use bevy::{
     app::SubApp,
@@ -31,6 +34,12 @@ pub enum AutoBufferKind {
 /// registration methods. Read at startup to compile per-group layouts.
 #[derive(Resource, Default)]
 pub struct AutoBufferLayouts(pub BTreeMap<u32, BTreeMap<u32, AutoBufferKind>>);
+
+/// Minimum byte size of each registered `(group, binding)`, where known. Put in the
+/// layouts as `min_binding_size`, which lets wgpu check buffer sizes once when a bind
+/// group is created instead of on every draw and dispatch.
+#[derive(Resource, Default)]
+pub(crate) struct AutoBufferMinSizes(BTreeMap<(u32, u32), NonZeroU64>);
 
 /// Compiled [`BindGroupLayout`] per group, populated at startup.
 ///
@@ -101,29 +110,38 @@ pub(crate) fn init_resources(render_app: &mut SubApp) {
     render_app.init_resource::<AutoBufferLayoutDescriptors>();
     render_app.init_resource::<AutoBufferBindGroups>();
     render_app.init_resource::<BindingTable>();
+    render_app.init_resource::<AutoBufferMinSizes>();
 }
 
-/// Record that `(group_index, binding_index)` holds a buffer of `kind`.
+/// Record that `(group_index, binding_index)` holds a buffer of `kind`, at least
+/// `min_size` bytes long.
 pub(crate) fn register_binding(
     render_app: &mut SubApp,
     group_index: u32,
     binding_index: u32,
     kind: AutoBufferKind,
+    min_size: Option<NonZeroU64>,
 ) {
     init_resources(render_app);
-    render_app
-        .world_mut()
+    let world = render_app.world_mut();
+    world
         .resource_mut::<AutoBufferLayouts>()
         .0
         .entry(group_index)
         .or_default()
         .insert(binding_index, kind);
+    let mut min_sizes = world.resource_mut::<AutoBufferMinSizes>();
+    match min_size {
+        Some(size) => min_sizes.0.insert((group_index, binding_index), size),
+        None => min_sizes.0.remove(&(group_index, binding_index)),
+    };
 }
 
 /// `RenderStartup` system. Builds one bind group layout per registered group.
 pub(crate) fn compile_layouts(
     pipeline_cache: Res<PipelineCache>,
     auto_buffer_layouts: Res<AutoBufferLayouts>,
+    min_sizes: Res<AutoBufferMinSizes>,
     mut compiled_layouts: ResMut<AutoBufferCompiledLayouts>,
     mut descriptors: ResMut<AutoBufferLayoutDescriptors>,
 ) {
@@ -140,17 +158,15 @@ pub(crate) fn compile_layouts(
             .map(|(&binding, &kind)| BindGroupLayoutEntry {
                 binding,
                 visibility: AUTO_BINDING_VISIBILITY,
-                ty: match kind {
-                    AutoBufferKind::Uniform => BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                ty: BindingType::Buffer {
+                    ty: match kind {
+                        AutoBufferKind::Uniform => BufferBindingType::Uniform,
+                        AutoBufferKind::Storage { read_only } => {
+                            BufferBindingType::Storage { read_only }
+                        }
                     },
-                    AutoBufferKind::Storage { read_only } => BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
+                    has_dynamic_offset: false,
+                    min_binding_size: min_sizes.0.get(&(group_index, binding)).copied(),
                 },
                 count: None,
             })

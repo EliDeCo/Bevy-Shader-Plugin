@@ -2,6 +2,7 @@ use std::{
     any::{TypeId, type_name},
     collections::HashMap,
     marker::PhantomData,
+    num::NonZeroU64,
 };
 
 use bevy::{
@@ -17,7 +18,7 @@ use bevy::{
 
 use crate::{
     ShaderSystems,
-    auto_array::default_filled_bytes,
+    auto_array::{array_stride, default_filled_bytes},
     bindings::{AutoBufferKind, BindingTable, register_binding},
 };
 
@@ -94,11 +95,17 @@ where
     });
 
     let render_app = app.sub_app_mut(RenderApp);
+    // One element: what a runtime-sized `array<T>` requires. Not the full length, since
+    // the asset behind `GpuBuffer::handle` can be replaced with a different-sized one.
+    let min_size = (len > 0)
+        .then(|| NonZeroU64::new(array_stride::<T>() as u64))
+        .flatten();
     register_binding(
         render_app,
         group_index,
         binding_index,
         AutoBufferKind::Storage { read_only: false },
+        min_size,
     );
 
     render_app.add_systems(
